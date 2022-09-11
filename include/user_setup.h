@@ -12,8 +12,10 @@
 #include <Wire.h>
 #include <SSD1306Ascii.h>
 #include <SSD1306AsciiWire.h>
+#include <daly-bms-uart.h>
+//#include <HardwareSerial.h>
 
-// Declare user setup and main loop functions
+// Declare user, setup and main loop functions
 extern void user_setup();
 extern void user_loop();
 extern void oled_sys_stat();
@@ -22,10 +24,18 @@ extern void oled_bms_stat();
 // Declare global user specific objects
 // extern abc xyz;
 extern SSD1306AsciiWire oled;
+extern Daly_BMS_UART bms;
+
+// Global user vars
+extern bool BMSresponding;
 
 // I2C Pins
 #define I2C_SCL 39
 #define I2C_SDA 37
+
+// UART Connection to BMS (defaults to GPIO17 for TXD and GPIO18 for RXD on ESP32-S2?)
+#define DALY_UART Serial1
+
 
 // OLED Settings
 #define OLED_ADDRESS 0x3C

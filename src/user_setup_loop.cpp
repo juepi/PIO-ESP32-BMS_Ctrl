@@ -10,6 +10,12 @@
 // Setup OLED instance
 SSD1306AsciiWire oled;
 
+// Setup Daly BMS connector instance
+Daly_BMS_UART bms(DALY_UART);
+
+// Declare global user vars
+bool BMSresponding = false;
+
 /*
  * User Setup Loop
  * ========================================================================
@@ -20,6 +26,7 @@ void user_setup()
   oled.begin(&Adafruit128x32, OLED_ADDRESS);
   oled.setFont(Adafruit5x7);
   oled.clear();
+  bms.Init();
 }
 
 /*
@@ -28,6 +35,17 @@ void user_setup()
  */
 void user_loop()
 {
+
+  // Update data from BMS
+  if(bms.update())
+  {
+    BMSresponding = true;
+  }
+  else
+  {
+    BMSresponding = false;
+  }
+
   // small OLED lines: 21 characters
   // large (set2X) OLED Lines: 11 Characters
   oled_sys_stat();
@@ -46,22 +64,28 @@ void oled_sys_stat()
   oled.set1X();
   if (WiFi.isConnected())
   {
-    oled.println("WiFi: Connected.");
+    oled.println("WiFi: OK");
   }
   else
   {
-    oled.println("WiFi: Disconnected!");
+    oled.println("WiFi: FAIL");
   }
   if (mqttClt.connected())
   {
-    oled.println("MQTT: Connected.");
+    oled.println("MQTT: OK");
   }
   else
   {
-    oled.println("MQTT: Disconnected!");
+    oled.println("MQTT: FAIL");
   }
-  oled.print("OTA Update req.: ");
-  oled.println(String(OTAupdate));
+if (BMSresponding)
+  {
+    oled.println("BMS: OK");
+  }
+  else
+  {
+    oled.println("BMS: FAIL");
+  }
   oled.print("Uptime: ");
   unsigned long secs = millis() / 1000UL;
   oled.println(secs);
@@ -73,9 +97,9 @@ void oled_bms_stat()
 {
   oled.clear();
   oled.set2X();
-  oled.println("SoC: 100%");
+  oled.println("SoC: " + String(bms.get.packSOC,1));
   oled.set1X();
-  oled.println("Vbat: 13.7V");
-  oled.println("Ibat: -1,2A");
+  oled.println("Vbat: " + String(bms.get.packVoltage,2));
+  oled.println("Ibat: " + String(bms.get.packCurrent,2));
   MqttDelay(5000);
 }
