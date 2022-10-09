@@ -16,7 +16,7 @@
  */
 void loop()
 {
-  delay(200);
+  //delay(200);
   // Check connection to MQTT broker, subscribe and update topics
   MqttUpdater();
 
@@ -49,8 +49,8 @@ void loop()
   WiFi.disconnect();
   ESP.deepSleep(DS_DURATION_MIN * 60000000);
 #else
-  DEBUG_PRINTLN("Loop finished, DeepSleep disabled. Restarting in 5 seconds.");
+  //DEBUG_PRINTLN("Loop finished, DeepSleep disabled. Restarting..");
 #endif
   // ATTN: Sketch continues to run for a short time after initiating DeepSleep, so pause here
-  delay(5000);
+  //delay(5000);
 }

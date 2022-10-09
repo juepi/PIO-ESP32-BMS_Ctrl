@@ -24,3 +24,7 @@ This is early work-in-progress, as my Daly-BMS along with all other required par
 
 ## v0.2.0
 - Added Daly BMS library and some code - compiles, but untested (my hardware still not arrived yet)
+
+## v0.3.0
+- Communication to Daly BMS works
+- INA226 integrated; initializes communcation but doesn't provide data.. no idea atm what's wrong here

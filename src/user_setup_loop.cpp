@@ -13,8 +13,30 @@ SSD1306AsciiWire oled;
 // Setup Daly BMS connector instance
 Daly_BMS_UART bms(DALY_UART);
 
+// Setup INA226 wattmeter instance (highly recommended! Daly far too inprecise!)
+INA226 ina(Wire);
+
 // Declare global user vars
 bool BMSresponding = false;
+bool INA_avail = false;
+bool EnableDisplay = false;
+// Power Calculations
+// Global Watt-seconds pushed into / taken out of the battery
+// will be used to calculate more accurate SOC
+// INA226_Raw INADAT;
+// INADAT.V = 0;
+float INA_V = 0;
+float INA_I = 0;
+float INA_P = 0;
+float INA_SOC = 0;
+float INA_Calc_Ws = 0;
+// Maximum "seen" Watt-seconds (battery full -> 100% SOC)
+float INA_Max_Ws = BAT_ESTIMATED_WS;
+// Other helpers
+uint32_t LastDisplayChange = 0;
+int DataSetDisplayed = 0;
+uint32_t UptimeSeconds = 0;
+unsigned long oldMillis = 0;
 
 /*
  * User Setup Loop
@@ -23,10 +45,23 @@ bool BMSresponding = false;
 void user_setup()
 {
   Wire.begin(I2C_SDA, I2C_SCL);
+  pinMode(BUT1, INPUT_PULLDOWN);
   oled.begin(&Adafruit128x32, OLED_ADDRESS);
   oled.setFont(Adafruit5x7);
   oled.clear();
   bms.Init();
+  EnableDisplay = digitalRead(BUT1);
+  INA_avail = ina.begin(INA_ADDRESS);
+  if (INA_avail)
+  {
+    ina.configure(INA226_AVERAGES_1, INA226_BUS_CONV_TIME_1100US, INA226_SHUNT_CONV_TIME_1100US, INA226_MODE_SHUNT_BUS_CONT);
+    ina.calibrate(INA_SHUNT, INA_MAX_I);
+    DEBUG_PRINTLN("INA226 initialized.");
+  }
+  else
+  {
+    DEBUG_PRINTLN("Failed to initialize INA226!");
+  }
 }
 
 /*
@@ -35,32 +70,73 @@ void user_setup()
  */
 void user_loop()
 {
-
-  // Update data from BMS
-  if(bms.update())
+  // Check if one second has passed and run required actions
+  // TODO: get timer working..
+  if ((millis() - oldMillis) >= 1000)
   {
-    BMSresponding = true;
+    //unsigned long error = millis() - oldMillis; // timing inaccuracy evaluation
+    oldMillis = millis();
+    UptimeSeconds++;
+
+    // Get data from INA226
+    float INA_V = ina.readBusVoltage();
+    float INA_I = ina.readShuntCurrent();
+    float INA_P = ina.readBusPower();
+    // Calculations
+    INA_Calc_Ws = INA_Calc_Ws + INA_P;
+    if (INA_Calc_Ws > INA_Max_Ws)
+    {
+      // We've got a new max. Ws value for the battery, remember it
+      INA_Max_Ws = INA_Calc_Ws;
+    }
+    INA_SOC = (INA_Calc_Ws / INA_Max_Ws) * 100;
+
+    // Update data from BMS
+    BMSresponding = bms.update();
+
+    // Display enabled?
+    EnableDisplay = (bool)digitalRead(BUT1);
+    //DEBUG_PRINTLN("Uptime " + String(UptimeSeconds));
+    //DEBUG_PRINTLN("Millis-Diff: " + String(error));
+  }
+
+  // Update display
+  if (EnableDisplay)
+  {
+    if ((UptimeSeconds - LastDisplayChange) >= CHANGE_AFTER_SEC)
+    {
+      // Change displayed Dataset
+      switch (DataSetDisplayed)
+      {
+      case 0:
+        oled_bms_stat();
+        break;
+      case 1:
+        oled_INA_stat();
+        break;
+      case 2:
+        oled_sys_stat();
+        break;
+      }
+    }
   }
   else
   {
-    BMSresponding = false;
+    oled.clear();
   }
-
-  // small OLED lines: 21 characters
-  // large (set2X) OLED Lines: 11 Characters
-  oled_sys_stat();
-  oled_bms_stat();
 
 #ifdef ONBOARD_LED
   // Toggle LED at each loop
-  ToggleLed(LED, 500, 4);
+  ToggleLed(LED, 100, 4);
 #endif
 }
 
+// OLED Display functions
+// small OLED lines: 21 characters per line
+// large (set2X) OLED Lines: 11 characters per line
 void oled_sys_stat()
 {
   oled.clear();
-  oled.invertDisplay(true);
   oled.set1X();
   if (WiFi.isConnected())
   {
@@ -78,7 +154,7 @@ void oled_sys_stat()
   {
     oled.println("MQTT: FAIL");
   }
-if (BMSresponding)
+  if (BMSresponding)
   {
     oled.println("BMS: OK");
   }
@@ -86,20 +162,38 @@ if (BMSresponding)
   {
     oled.println("BMS: FAIL");
   }
-  oled.print("Uptime: ");
-  unsigned long secs = millis() / 1000UL;
-  oled.println(secs);
-  MqttDelay(5000);
-  oled.invertDisplay(false);
+  if (INA_avail)
+  {
+    oled.println("INA226: OK");
+  }
+  else
+  {
+    oled.println("INA226: FAIL");
+  }
+  DataSetDisplayed = 0;
+  LastDisplayChange = UptimeSeconds;
 }
 
 void oled_bms_stat()
 {
   oled.clear();
-  oled.set2X();
-  oled.println("SoC: " + String(bms.get.packSOC,1));
   oled.set1X();
-  oled.println("Vbat: " + String(bms.get.packVoltage,2));
-  oled.println("Ibat: " + String(bms.get.packCurrent,2));
-  MqttDelay(5000);
+  oled.println("Daly SoC: " + String(bms.get.packSOC, 1));
+  oled.println("Daly Vbat: " + String(bms.get.packVoltage, 2));
+  oled.println("Daly Ibat: " + String(bms.get.packCurrent, 2));
+  oled.println("Daly Vdiff: " + String(bms.get.cellDiff, 4));
+  DataSetDisplayed = 1;
+  LastDisplayChange = UptimeSeconds;
+}
+
+void oled_INA_stat()
+{
+  oled.clear();
+  oled.set1X();
+  oled.println("Calc SoC: " + String(INA_SOC, 1));
+  oled.println("INA Vbat: " + String(INA_V, 2));
+  oled.println("INA Ibat: " + String(INA_I, 2));
+  oled.println("INA PWR:  " + String(INA_P, 1));
+  DataSetDisplayed = 2;
+  LastDisplayChange = UptimeSeconds;
 }
