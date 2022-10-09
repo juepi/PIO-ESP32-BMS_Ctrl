@@ -15,7 +15,12 @@ Thanks to [maland16 and softwarecrash](https://github.com/maland16/daly-bms-uart
 Keep in mind that you are working with potentially dangerous currents depending on the hardware you use. Take any precautions necessary!
 
 ## Status
-This is early work-in-progress, as my Daly-BMS along with all other required parts have not yet arrived. If everything works as expected, a hardware part might follow, that combines all required bits and pieces on a single PCB.
+This is work-in-progress. If everything works as expected, a hardware part might follow, that combines all required bits and pieces on a single PCB.
+
+## Insights
+- Do not rely on the current reported by the Daly BMS, it is quite inaccurate at low levels. Even worse, **Daly does not recognize charge and discharge currents below 1.1A**, so at small setups like mine, this also means that you cannot rely on the SOC reported by Daly.
+- Instead, you could use a [Smart Shunt](https://www.victronenergy.com/battery-monitors/smart-battery-shunt) (expensive solution) or - for small currents - an [INA226](https://www.ti.com/lit/ds/symlink/ina226.pdf) breakout board.
+- Firmware-upgrading the ESP possibly breaks communication to the Daly BMS. In that case, you need to re-connect the BT-coin and press the button on it, the reconnect the UART-wires and it should work again. So it would probably be a good idea to wire the "button" to an ESP GPIO if possible.. gotta check how often this happens.
 
 # Version History
 
@@ -27,4 +32,4 @@ This is early work-in-progress, as my Daly-BMS along with all other required par
 
 ## v0.3.0
 - Communication to Daly BMS works
-- INA226 integrated; initializes communcation but doesn't provide data.. no idea atm what's wrong here
+- INA226 for more accurate power measurements integrated

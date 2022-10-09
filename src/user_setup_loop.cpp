@@ -34,6 +34,7 @@ float INA_Calc_Ws = 0;
 float INA_Max_Ws = BAT_ESTIMATED_WS;
 // Other helpers
 uint32_t LastDisplayChange = 0;
+uint32_t LastDataUpdate = 0;
 int DataSetDisplayed = 0;
 uint32_t UptimeSeconds = 0;
 unsigned long oldMillis = 0;
@@ -74,14 +75,14 @@ void user_loop()
   // TODO: get timer working..
   if ((millis() - oldMillis) >= 1000)
   {
-    //unsigned long error = millis() - oldMillis; // timing inaccuracy evaluation
+    // unsigned long error = millis() - oldMillis; // timing inaccuracy evaluation
     oldMillis = millis();
     UptimeSeconds++;
 
     // Get data from INA226
-    float INA_V = ina.readBusVoltage();
-    float INA_I = ina.readShuntCurrent();
-    float INA_P = ina.readBusPower();
+    INA_V = ina.readBusVoltage();
+    INA_I = ina.readShuntCurrent();
+    INA_P = ina.readBusPower();
     // Calculations
     INA_Calc_Ws = INA_Calc_Ws + INA_P;
     if (INA_Calc_Ws > INA_Max_Ws)
@@ -96,14 +97,39 @@ void user_loop()
 
     // Display enabled?
     EnableDisplay = (bool)digitalRead(BUT1);
-    //DEBUG_PRINTLN("Uptime " + String(UptimeSeconds));
-    //DEBUG_PRINTLN("Millis-Diff: " + String(error));
+    // DEBUG_PRINTLN("Uptime " + String(UptimeSeconds));
+    // DEBUG_PRINTLN("Millis-Diff: " + String(error));
   }
 
+  // Publish data to MQTT
+  if ((UptimeSeconds - LastDataUpdate) >= DATA_UPDATE_INTERVAL && mqttClt.connected())
+  {
+    // Daly BMS Data
+    mqttClt.publish(t_DSOC, String(bms.get.packSOC, 1).c_str(), true);
+    mqttClt.publish(t_DV, String(bms.get.packVoltage, 2).c_str(), true);
+    mqttClt.publish(t_DdV, String((bms.get.cellDiff / 1000), 3).c_str(), true);
+    mqttClt.publish(t_DI, String(bms.get.packCurrent, 2).c_str(), true);
+    mqttClt.publish(t_DV_C1, String((bms.get.cellVmV[0] / 1000), 3).c_str(), true);
+    mqttClt.publish(t_DV_C2, String((bms.get.cellVmV[1] / 1000), 3).c_str(), true);
+    mqttClt.publish(t_DV_C3, String((bms.get.cellVmV[2] / 1000), 3).c_str(), true);
+    mqttClt.publish(t_DV_C4, String((bms.get.cellVmV[3] / 1000), 3).c_str(), true);
+    mqttClt.publish(t_DLSw, String(bms.get.disChargeFetState).c_str(), true);
+    mqttClt.publish(t_DCSw, String(bms.get.chargeFetState).c_str(), true);
+    mqttClt.publish(t_DTemp, String(bms.get.tempAverage).c_str(), true);
+
+    // INA226 and calculated data
+    mqttClt.publish(t_IV, String(INA_V, 2).c_str(), true);
+    mqttClt.publish(t_II, String(INA_I, 2).c_str(), true);
+    mqttClt.publish(t_IP, String(INA_P, 1).c_str(), true);
+    mqttClt.publish(t_C_SOC, String(INA_SOC, 1).c_str(), true);
+    mqttClt.publish(t_C_MaxWh, String((INA_Max_Ws / 3600), 0).c_str(), true);
+
+    LastDataUpdate = UptimeSeconds;
+  }
   // Update display
   if (EnableDisplay)
   {
-    if ((UptimeSeconds - LastDisplayChange) >= CHANGE_AFTER_SEC)
+    if ((UptimeSeconds - LastDisplayChange) >= DISPLAY_REFRESH_INTERVAL)
     {
       // Change displayed Dataset
       switch (DataSetDisplayed)
@@ -118,6 +144,7 @@ void user_loop()
         oled_sys_stat();
         break;
       }
+      LastDisplayChange = UptimeSeconds;
     }
   }
   else
@@ -171,7 +198,6 @@ void oled_sys_stat()
     oled.println("INA226: FAIL");
   }
   DataSetDisplayed = 0;
-  LastDisplayChange = UptimeSeconds;
 }
 
 void oled_bms_stat()
@@ -181,9 +207,8 @@ void oled_bms_stat()
   oled.println("Daly SoC: " + String(bms.get.packSOC, 1));
   oled.println("Daly Vbat: " + String(bms.get.packVoltage, 2));
   oled.println("Daly Ibat: " + String(bms.get.packCurrent, 2));
-  oled.println("Daly Vdiff: " + String(bms.get.cellDiff, 4));
+  oled.println("Daly Vdiff: " + String((bms.get.cellDiff / 1000), 3));
   DataSetDisplayed = 1;
-  LastDisplayChange = UptimeSeconds;
 }
 
 void oled_INA_stat()
@@ -195,5 +220,4 @@ void oled_INA_stat()
   oled.println("INA Ibat: " + String(INA_I, 2));
   oled.println("INA PWR:  " + String(INA_P, 1));
   DataSetDisplayed = 2;
-  LastDisplayChange = UptimeSeconds;
 }
