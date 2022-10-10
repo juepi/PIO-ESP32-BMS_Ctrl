@@ -20,7 +20,7 @@ This is work-in-progress. If everything works as expected, a hardware part might
 ## Insights
 - Do not rely on the current reported by the Daly BMS, it is quite inaccurate at low levels. Even worse, **Daly does not recognize charge and discharge currents below 1.1A**, so at small setups like mine, this also means that you cannot rely on the SOC reported by Daly.
 - Instead, you could use a [Smart Shunt](https://www.victronenergy.com/battery-monitors/smart-battery-shunt) (expensive solution) or - for small currents - an [INA226](https://www.ti.com/lit/ds/symlink/ina226.pdf) breakout board.
-- Firmware-upgrading the ESP possibly breaks communication to the Daly BMS. In that case, you need to re-connect the BT-coin and press the button on it, the reconnect the UART-wires and it should work again. So it would probably be a good idea to wire the "button" to an ESP GPIO if possible.. gotta check how often this happens.
+- Firmware-upgrading the ESP possibly breaks communication to the Daly BMS. In that case, you need to re-connect the BT-coin and press the button on it, the reconnect the UART-wires and it should work again. So it would probably be a good idea to wire the "button" to an ESP GPIO if possible.. gotta check how often this happens. **EDIT:** might be related with the "sleep waiting time" of the BMS, needs further investigation.
 
 # Version History
 

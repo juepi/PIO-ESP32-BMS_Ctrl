@@ -67,11 +67,11 @@ extern int DataSetDisplayed;
 #define INA_MAX_I 5     // max. expected current 5A
 
 // Battery settings
-#define BAT_ESTIMATED_WS 55000 // rough Ws (Watt seconds) of the connected battery; better use 20% lower value than what you think the battery has
+#define BAT_ESTIMATED_WS 150000 // rough Ws (Watt seconds) of the connected battery; better use 20% lower value than what you think the battery has
 
 // MQTT Data update interval
 // Send MQTT data ever x seconds
-#define DATA_UPDATE_INTERVAL 9
+#define DATA_UPDATE_INTERVAL 29
 
 // MQTT Topics for BMS Controlling and Monitoring
 #define t_DSOC TOPTREE "Daly_SOC"   // BMS Battery State of Charge - publish only (useless, see current)
