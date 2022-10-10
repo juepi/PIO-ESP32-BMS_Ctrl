@@ -65,31 +65,33 @@ extern int DataSetDisplayed;
 #define INA_ADDRESS 0x40
 #define INA_SHUNT 0.002 // 2mOhm shunt
 #define INA_MAX_I 5     // max. expected current 5A
+#define INA_MIN_I 0.005 // measured currents below 5mA will be discarded
 
 // Battery settings
-#define BAT_ESTIMATED_WS 150000 // rough Ws (Watt seconds) of the connected battery; better use 20% lower value than what you think the battery has
+#define BAT_ESTIMATED_WS 150000 // rough Ws (Watt seconds) of the connected battery; use 50% of actual capacity - just a starting value
 
 // MQTT Data update interval
 // Send MQTT data ever x seconds
-#define DATA_UPDATE_INTERVAL 29
+#define DATA_UPDATE_INTERVAL 30
 
 // MQTT Topics for BMS Controlling and Monitoring
-#define t_DSOC TOPTREE "Daly_SOC"   // BMS Battery State of Charge - publish only (useless, see current)
-#define t_DV TOPTREE "Daly_V"       // BMS Battery Voltage - publish only
-#define t_DdV TOPTREE "Daly_dV"     // BMS Voltage diff between highest and lowest cell voltage - publish only
-#define t_DI TOPTREE "Daly_I"       // BMS Battery Current - publish only (useless, only shows currents > 1.1A!)
-#define t_DV_C1 TOPTREE "Daly_C1V"  // Cell 1 voltage - publish only
-#define t_DV_C2 TOPTREE "Daly_C2V"  // Cell 2 voltage - publish only
-#define t_DV_C3 TOPTREE "Daly_C3V"  // Cell 3 voltage - publish only
-#define t_DV_C4 TOPTREE "Daly_C4V"  // Cell 4 voltage - publish only
-#define t_DLSw TOPTREE "Daly_LSw"   // Actual "switch state" for load MOSFETs (0/1) - publish only
-#define t_DCSw TOPTREE "Daly_CSw"   // Actual "switch state" for charging MOSFETs (0/1) - publish only
-#define t_DTemp TOPTREE "Daly_Temp" // Temperature sensor of the BMS - publish only
-#define t_IV TOPTREE "INA_V"       // Battery voltage reported by INA - publish only
-#define t_II TOPTREE "INA_I"       // Battery current reported by INA - publish only
-#define t_IP TOPTREE "INA_P"       // Power reported by INA - publish only
-#define t_C_MaxWh TOPTREE "Calc_Wh" // Store the calculated battery capacity on the broker (fetched at ESP startup) - subscription
-#define t_C_SOC TOPTREE "Calc_SOC"  // Calculated SOC based ina INA data - publish only
+#define t_DSOC TOPTREE "Daly_SOC"      // BMS Battery State of Charge - publish only (useless, see current)
+#define t_DV TOPTREE "Daly_V"          // BMS Battery Voltage - publish only
+#define t_DdV TOPTREE "Daly_dV"        // BMS Voltage diff between highest and lowest cell voltage - publish only
+#define t_DI TOPTREE "Daly_I"          // BMS Battery Current - publish only (useless, only shows currents > 1.1A!)
+#define t_DV_C1 TOPTREE "Daly_C1V"     // Cell 1 voltage - publish only
+#define t_DV_C2 TOPTREE "Daly_C2V"     // Cell 2 voltage - publish only
+#define t_DV_C3 TOPTREE "Daly_C3V"     // Cell 3 voltage - publish only
+#define t_DV_C4 TOPTREE "Daly_C4V"     // Cell 4 voltage - publish only
+#define t_DLSw TOPTREE "Daly_LSw"      // Actual "switch state" for load MOSFETs (0/1) - publish only
+#define t_DCSw TOPTREE "Daly_CSw"      // Actual "switch state" for charging MOSFETs (0/1) - publish only
+#define t_DTemp TOPTREE "Daly_Temp"    // Temperature sensor of the BMS - publish only
+#define t_IV TOPTREE "INA_V"           // Battery voltage reported by INA - publish only
+#define t_II TOPTREE "INA_I"           // Battery current reported by INA - publish only
+#define t_IP TOPTREE "INA_P"           // Power reported by INA - publish only
+#define t_C_MaxWh TOPTREE "Calc_maxWh" // Store the calculated battery capacity on the broker (fetched at ESP startup) - subscription
+#define t_C_Wh TOPTREE "Calc_Wh"       // Currently calculated energy stored in the battery - publish only
+#define t_C_SOC TOPTREE "Calc_SOC"     // Calculated SOC based ina INA data - publish only
 
 /* // Class for INA226 related data
 class INA_class

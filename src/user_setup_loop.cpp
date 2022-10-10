@@ -55,7 +55,7 @@ void user_setup()
   INA_avail = ina.begin(INA_ADDRESS);
   if (INA_avail)
   {
-    ina.configure(INA226_AVERAGES_1, INA226_BUS_CONV_TIME_1100US, INA226_SHUNT_CONV_TIME_1100US, INA226_MODE_SHUNT_BUS_CONT);
+    ina.configure(INA226_AVERAGES_64, INA226_BUS_CONV_TIME_8244US, INA226_SHUNT_CONV_TIME_8244US, INA226_MODE_SHUNT_BUS_CONT);
     ina.calibrate(INA_SHUNT, INA_MAX_I);
     DEBUG_PRINTLN("INA226 initialized.");
   }
@@ -82,15 +82,25 @@ void user_loop()
     // Get data from INA226
     INA_V = ina.readBusVoltage();
     INA_I = ina.readShuntCurrent();
-    INA_P = ina.readBusPower();
-    // Calculations
-    INA_Calc_Ws = INA_Calc_Ws + INA_P;
-    if (INA_Calc_Ws > INA_Max_Ws)
+    // ATTN: readBusPower() always reports positive values - not usable for our purpose!
+    // INA_P = ina.readBusPower();
+    if (abs(INA_I) >= INA_MIN_I)
     {
-      // We've got a new max. Ws value for the battery, remember it
-      INA_Max_Ws = INA_Calc_Ws;
+      INA_P = INA_V * INA_I;
+      // Calculations
+      INA_Calc_Ws = INA_Calc_Ws + INA_P;
+      if (INA_Calc_Ws > INA_Max_Ws)
+      {
+        // We've got a new max. Ws value for the battery, remember it
+        INA_Max_Ws = INA_Calc_Ws;
+      }
+      INA_SOC = (INA_Calc_Ws / INA_Max_Ws) * 100;
     }
-    INA_SOC = (INA_Calc_Ws / INA_Max_Ws) * 100;
+    else
+    {
+      INA_I = 0;
+      INA_P = 0;
+    }
 
     // Update data from BMS
     BMSresponding = bms.update();
@@ -123,6 +133,7 @@ void user_loop()
     mqttClt.publish(t_IP, String(INA_P, 1).c_str(), true);
     mqttClt.publish(t_C_SOC, String(INA_SOC, 1).c_str(), true);
     mqttClt.publish(t_C_MaxWh, String((INA_Max_Ws / 3600), 0).c_str(), true);
+    mqttClt.publish(t_C_Wh, String((INA_Calc_Ws / 3600), 0).c_str(), true);
 
     LastDataUpdate = UptimeSeconds;
   }
