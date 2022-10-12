@@ -58,6 +58,8 @@ bool MqttConnectToBroker()
             MqttSubscribe(ota_topic);
             MqttSubscribe(otaInProgress_topic);
 #endif // OTA_UPDATE
+            MqttSubscribe(t_Ctrl_CSw);
+            MqttSubscribe(t_Ctrl_LSw);
             delay(200);
             break;
         }
@@ -264,6 +266,52 @@ void MqttCallback(char *topic, byte *payload, unsigned int length)
         else
         {
             DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid OtaInProgress: " + String(msgString));
+            delay(200);
+        }
+    }
+    else if (String(topic) == t_Ctrl_LSw)
+    {
+        if (msgString == "on")
+        {
+            Ctrl_LSw = 1;
+            ReceivedTopics++;
+        }
+        else if (msgString == "off")
+        {
+            Ctrl_LSw = 0;
+            ReceivedTopics++;
+        }
+        else if (msgString == "dnc")
+        {
+            Ctrl_LSw = 2;
+            ReceivedTopics++;
+        }
+        else
+        {
+            DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid Ctrl_LSw: " + String(msgString));
+            delay(200);
+        }
+    }
+    else if (String(topic) == t_Ctrl_CSw)
+    {
+        if (msgString == "on")
+        {
+            Ctrl_CSw = 1;
+            ReceivedTopics++;
+        }
+        else if (msgString == "off")
+        {
+            Ctrl_CSw = 0;
+            ReceivedTopics++;
+        }
+        else if (msgString == "dnc" || msgString == "done")
+        {
+            Ctrl_CSw = 2;
+            ReceivedTopics++;
+        }
+        else
+        {
+            DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid Ctrl_CSw: " + String(msgString));
             delay(200);
         }
     }
