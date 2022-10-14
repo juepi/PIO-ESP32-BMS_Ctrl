@@ -14,6 +14,8 @@
 #include <SSD1306AsciiWire.h>
 #include <daly-bms-uart.h>
 #include <INA226.h>
+// for debugging (get reset reason)
+#include "esp32s2/rom/rtc.h"
 
 // Declare user setup, main and custom functions
 extern void user_setup();
@@ -64,24 +66,25 @@ extern int Ctrl_LSw;
 
 // MQTT Topics for BMS Controlling and Monitoring
 // Publish only
-#define t_DSOC TOPTREE "Daly_SOC"      // BMS Battery State of Charge(useless, see current)
-#define t_DV TOPTREE "Daly_V"          // BMS Battery Voltage
-#define t_DdV TOPTREE "Daly_dV"        // BMS Voltage diff between highest and lowest cell voltage
-#define t_DI TOPTREE "Daly_I"          // BMS Battery Current(useless, only shows currents > 1.1A!)
-#define t_DV_C1 TOPTREE "Daly_C1V"     // Cell 1 voltage
-#define t_DV_C2 TOPTREE "Daly_C2V"     // Cell 2 voltage
-#define t_DV_C3 TOPTREE "Daly_C3V"     // Cell 3 voltage
-#define t_DV_C4 TOPTREE "Daly_C4V"     // Cell 4 voltage
-#define t_DLSw TOPTREE "Daly_LSw"      // Actual "switch state" for load MOSFETs (0/1)
-#define t_DCSw TOPTREE "Daly_CSw"      // Actual "switch state" for charging MOSFETs (0/1)
-#define t_DTemp TOPTREE "Daly_Temp"    // Temperature sensor of the BMS
-#define t_IV TOPTREE "INA_V"           // Battery voltage reported by INA
-#define t_II TOPTREE "INA_I"           // Battery current reported by INA
-#define t_IP TOPTREE "INA_P"           // Power reported by INA
-#define t_C_Wh TOPTREE "Calc_Wh"       // Currently calculated energy stored in the battery
-#define t_C_SOC TOPTREE "Calc_SOC"     // Calculated SOC based ina INA data
-#define t_C_MaxWh TOPTREE "Calc_maxWh" // Store the calculated battery capacity on the broker (not yet a subscription)
-#define t_Ctrl_Stat TOPTREE "CtrlStatTXT"   // ESP Controller status text provided through MQTT (basically to check if UART to Daly BMS is OK)
+#define t_DSOC TOPTREE "Daly_SOC"          // BMS Battery State of Charge(useless, see current)
+#define t_DV TOPTREE "Daly_V"              // BMS Battery Voltage
+#define t_DdV TOPTREE "Daly_dV"            // BMS Voltage diff between highest and lowest cell voltage
+#define t_DI TOPTREE "Daly_I"              // BMS Battery Current(useless, only shows currents > 1.1A!)
+#define t_DV_C1 TOPTREE "Daly_C1V"         // Cell 1 voltage
+#define t_DV_C2 TOPTREE "Daly_C2V"         // Cell 2 voltage
+#define t_DV_C3 TOPTREE "Daly_C3V"         // Cell 3 voltage
+#define t_DV_C4 TOPTREE "Daly_C4V"         // Cell 4 voltage
+#define t_DLSw TOPTREE "Daly_LSw"          // Actual "switch state" for load MOSFETs (0/1)
+#define t_DCSw TOPTREE "Daly_CSw"          // Actual "switch state" for charging MOSFETs (0/1)
+#define t_DTemp TOPTREE "Daly_Temp"        // Temperature sensor of the BMS
+#define t_IV TOPTREE "INA_V"               // Battery voltage reported by INA
+#define t_II TOPTREE "INA_I"               // Battery current reported by INA
+#define t_IP TOPTREE "INA_P"               // Power reported by INA
+#define t_C_Wh TOPTREE "Calc_Wh"           // Currently calculated energy stored in the battery
+#define t_C_SOC TOPTREE "Calc_SOC"         // Calculated SOC based ina INA data
+#define t_C_MaxWh TOPTREE "Calc_maxWh"     // Store the calculated battery capacity on the broker (not yet a subscription)
+#define t_Ctrl_StatT TOPTREE "CtrlStatTXT" // ESP Controller status text and last reset reason provided through MQTT (basically to check if UART to Daly BMS is OK)
+#define t_Ctrl_StatU TOPTREE "CtrlStatUpt" // ESP Controller uptime provided through MQTT
 // Subscriptions
 #define t_Ctrl_CSw TOPTREE "Ctrl_CSw" // User-desired state of charging MOSFETs (on/off or dnc for "do not change")
 #define t_Ctrl_LSw TOPTREE "Ctrl_LSw" // User-desired state of load / discharging MOSFETs (on/off or dnc)

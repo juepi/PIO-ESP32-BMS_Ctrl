@@ -69,6 +69,7 @@ void user_loop()
   static unsigned long oldMillis = 0;
   static const char *Stat_Decoder[] = {"FAIL", "OK"};
   static const char *Bool_Decoder[] = {"off", "on"};
+  static bool OledCleared = false;
 
   // Check if one second has passed and run required actions
   if ((millis() - oldMillis) >= 1000)
@@ -126,11 +127,12 @@ void user_loop()
       mqttClt.publish(t_DLSw, String(Bool_Decoder[(int)bms.get.disChargeFetState]).c_str(), true);
       mqttClt.publish(t_DCSw, String(Bool_Decoder[(int)bms.get.chargeFetState]).c_str(), true);
       mqttClt.publish(t_DTemp, String(bms.get.tempAverage).c_str(), true);
-      mqttClt.publish(t_Ctrl_Stat, String("ok").c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("ok_" + String(rtc_get_reset_reason(0))).c_str(), true);
+      mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
     }
     else
     {
-      mqttClt.publish(t_Ctrl_Stat, String("BMS_Fail").c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("BMS_Fail").c_str(), true);
     }
     // INA226 and calculated data
     mqttClt.publish(t_IV, String(INADAT.V, 2).c_str(), true);
@@ -231,11 +233,17 @@ void user_loop()
         break;
       }
       LastDisplayChange = UptimeSeconds;
+      OledCleared = false;
     }
   }
   else
   {
-    oled.clear();
+    if (!OledCleared)
+    {
+      oled.clear();
+      OledCleared = true;
+    }
+
   }
 
 #ifdef ONBOARD_LED
