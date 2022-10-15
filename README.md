@@ -16,7 +16,6 @@ Keep in mind that you are working with potentially dangerous currents depending 
 
 ## Status
 This is work-in-progress. If everything works as expected, a hardware part might follow, that combines all required bits and pieces on a single PCB.
-ESP seems to hang or reset after ~ 8hrs, needs investigation.
 
 ## Insights
 - Do not rely on the current reported by the Daly BMS, it is quite inaccurate at low levels. Even worse, **Daly does not recognize charge and discharge currents below 1.1A**, so at small setups like mine, this also means that you cannot rely on the SOC reported by Daly.
@@ -41,3 +40,4 @@ ESP seems to hang or reset after ~ 8hrs, needs investigation.
 - Code improvements
 - Extended MQTT communication
 - Added ability to manually set charge / discharge MOSFET states on Daly though MQTT
+- solved possible ESP crash/reset after several hours caused by excessive `oled.clear()` calls
