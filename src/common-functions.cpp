@@ -60,6 +60,7 @@ bool MqttConnectToBroker()
 #endif // OTA_UPDATE
             MqttSubscribe(t_Ctrl_CSw);
             MqttSubscribe(t_Ctrl_LSw);
+            MqttSubscribe(t_Ctrl_SSR1);
             delay(200);
             break;
         }
@@ -122,8 +123,8 @@ void MqttUpdater()
 // This causes some inaccuracy in the delay of course.
 void MqttDelay(uint32_t delayms)
 {
-    //unsigned long md_start = millis();
-    // Call MqttUpdater every 200ms
+    // unsigned long md_start = millis();
+    //  Call MqttUpdater every 200ms
     int Counter = delayms / 200;
     if (Counter == 0)
     {
@@ -139,10 +140,10 @@ void MqttDelay(uint32_t delayms)
             delay(200);
         }
     }
-    //unsigned long real_delay = millis() - md_start;
-    //DEBUG_PRINTLN("MqttDelay requested: " + String(delayms));
-    //DEBUG_PRINTLN("MqttDelay Counter: " + String(Counter));
-    //DEBUG_PRINTLN("MqttDelay duration: " + String(real_delay));    
+    // unsigned long real_delay = millis() - md_start;
+    // DEBUG_PRINTLN("MqttDelay requested: " + String(delayms));
+    // DEBUG_PRINTLN("MqttDelay Counter: " + String(Counter));
+    // DEBUG_PRINTLN("MqttDelay duration: " + String(real_delay));
 }
 
 // Function to handle OTA flashing (called in main loop)
@@ -312,6 +313,24 @@ void MqttCallback(char *topic, byte *payload, unsigned int length)
         else
         {
             DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid Ctrl_CSw: " + String(msgString));
+            delay(200);
+        }
+    }
+    else if (String(topic) == t_Ctrl_SSR1)
+    {
+        if (msgString == "on")
+        {
+            Ctrl_SSR1 = true;
+            ReceivedTopics++;
+        }
+        else if (msgString == "off")
+        {
+            Ctrl_SSR1 = false;
+            ReceivedTopics++;
+        }
+        else
+        {
+            DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid Ctrl_SSR1: " + String(msgString));
             delay(200);
         }
     }

@@ -21,6 +21,7 @@ bool INA_avail = false;
 // for MQTT topics
 int Ctrl_CSw = 2;
 int Ctrl_LSw = 2;
+bool Ctrl_SSR1 = false;
 
 /*
  * User Setup Loop
@@ -30,6 +31,8 @@ void user_setup()
 {
   Wire.begin(I2C_SDA, I2C_SCL);
   pinMode(BUT1, INPUT_PULLDOWN);
+  pinMode(SSR1, OUTPUT);
+  digitalWrite(SSR1, LOW);
   oled.begin(&Adafruit128x32, OLED_ADDRESS);
   oled.setFont(Adafruit5x7);
   oled.clear();
@@ -54,8 +57,9 @@ void user_setup()
  */
 void user_loop()
 {
+  //
   // Declare Vars
-  // ================
+  //
   static bool BMSresponding = false;
   static bool EnableDisplay = false;
   // Power Calculations / Readings
@@ -71,7 +75,9 @@ void user_loop()
   static const char *Bool_Decoder[] = {"off", "on"};
   static bool OledCleared = false;
 
-  // Check if one second has passed and run required actions
+  //
+  // Gather data every second
+  //
   if ((millis() - oldMillis) >= 1000)
   {
     // unsigned long error = millis() - oldMillis; // timing inaccuracy evaluation
@@ -81,8 +87,7 @@ void user_loop()
     // Get data from INA226
     INADAT.V = ina.readBusVoltage();
     INADAT.I = ina.readShuntCurrent();
-    // ATTN: readBusPower() always reports positive values - not usable for our purpose!
-    // Calc.P = ina.readBusPower();
+    // ATTN: ina.readBusPower() always reports positive values - not usable for our purpose!
     if (abs(INADAT.I) >= INA_MIN_I)
     {
       // Calculations
@@ -110,10 +115,12 @@ void user_loop()
     // DEBUG_PRINTLN("Millis-Diff: " + String(error));
   }
 
-  // Publish data to MQTT
+  //
+  // Publish data to MQTT broker
+  //
   if ((UptimeSeconds - LastDataUpdate) >= DATA_UPDATE_INTERVAL && mqttClt.connected())
   {
-    // Daly BMS Data
+    // Daly BMS and Controller Data
     if (BMSresponding)
     {
       mqttClt.publish(t_DSOC, String(bms.get.packSOC, 1).c_str(), true);
@@ -128,12 +135,13 @@ void user_loop()
       mqttClt.publish(t_DCSw, String(Bool_Decoder[(int)bms.get.chargeFetState]).c_str(), true);
       mqttClt.publish(t_DTemp, String(bms.get.tempAverage).c_str(), true);
       mqttClt.publish(t_Ctrl_StatT, String("ok_" + String(rtc_get_reset_reason(0))).c_str(), true);
-      mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
     }
     else
     {
       mqttClt.publish(t_Ctrl_StatT, String("BMS_Fail").c_str(), true);
     }
+    mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
+
     // INA226 and calculated data
     mqttClt.publish(t_IV, String(INADAT.V, 2).c_str(), true);
     mqttClt.publish(t_II, String(INADAT.I, 2).c_str(), true);
@@ -143,58 +151,82 @@ void user_loop()
     mqttClt.publish(t_C_Wh, String((Calc.Ws / 3600), 1).c_str(), true);
 
     LastDataUpdate = UptimeSeconds;
-
-    // Handle desired Daly MOSFET load / charge switch states
-    if (Ctrl_CSw < 2)
-    {
-      // Set desired Charge Switch state
-      switch (Ctrl_CSw)
-      {
-      case 0:
-        bms.setChargeMOS(false);
-        break;
-      case 1:
-        bms.setChargeMOS(true);
-        break;
-      }
-      // state changed, reset to "do not change"
-      Ctrl_CSw = 2;
-      mqttClt.publish(t_Ctrl_CSw, String("dnc").c_str(), true);
-    }
-    if (Ctrl_LSw < 2)
-    {
-      // Set desired Discharge Switch state
-      switch (Ctrl_LSw)
-      {
-      case 0:
-        bms.setDischargeMOS(false);
-        break;
-      case 1:
-        bms.setDischargeMOS(true);
-        break;
-      }
-      // state changed, reset to "do not change"
-      Ctrl_LSw = 2;
-      mqttClt.publish(t_Ctrl_LSw, String("dnc").c_str(), true);
-    }
   }
 
-  // BMS Helper
-  // If a Cell has reached its charge limit, disable the Charge MOSFET until the battery is starting to discharge
-  // Daly BMS seems to behave a bit strange by toggling charging on and off every few minutes
-  // (might also be in conjuction with my cheap Solar charger)
+  //
+  // Load handling (SSR1)
+  //
+  // If a Cell has reached its charge limit, enable SSR1 (load)
   if (bms.alarm.levelOneCellVoltageTooHigh || bms.alarm.levelTwoCellVoltageTooHigh)
   {
-    bms.setChargeMOS(false);
+    Ctrl_SSR1 = true;
+    mqttClt.publish(t_Ctrl_SSR1, String("on").c_str(), true);
   }
 
-  // Re-enable charge MOSFET when SOC falls below 50%
-  if ((bms.get.packSOC < 50) && !bms.get.chargeFetState)
+  // Disable SSR1 when battery voltage is low and no more current running out of the battery
+  // Note: "Battery discharged" voltage quite high due to my special setup (AC powered supply in parallel)
+  if (Ctrl_SSR1 && INADAT.V <= 12.3f && INADAT.I >= -0.1f && INADAT.I <= 0.0f)
   {
-    bms.setChargeMOS(true);
+    Ctrl_SSR1 = false;
+    mqttClt.publish(t_Ctrl_SSR1, String("off").c_str(), true);
+    // battery is "empty" now
+    Calc.Ws = 0;
   }
 
+  //
+  // Handle desired Daly MOSFET charge / discharge switch states
+  //
+  if (Ctrl_CSw < 2)
+  {
+    // Set desired Charge Switch state
+    switch (Ctrl_CSw)
+    {
+    case 0:
+      bms.setChargeMOS(false);
+      break;
+    case 1:
+      bms.setChargeMOS(true);
+      break;
+    }
+    // state changed, reset to "do not change"
+    Ctrl_CSw = 2;
+    mqttClt.publish(t_Ctrl_CSw, String("dnc").c_str(), true);
+  }
+  if (Ctrl_LSw < 2)
+  {
+    // Set desired Discharge Switch state
+    switch (Ctrl_LSw)
+    {
+    case 0:
+      bms.setDischargeMOS(false);
+      break;
+    case 1:
+      bms.setDischargeMOS(true);
+      break;
+    }
+    // state changed, reset to "do not change"
+    Ctrl_LSw = 2;
+    mqttClt.publish(t_Ctrl_LSw, String("dnc").c_str(), true);
+  }
+
+  //
+  // Handle SSR1 state
+  //
+  if (Ctrl_SSR1 != (bool)digitalRead(SSR1))
+  {
+    if (Ctrl_SSR1)
+    {
+      digitalWrite(SSR1, HIGH);
+    }
+    else
+    {
+      digitalWrite(SSR1, LOW);
+    }
+  }
+
+  //
   // Update display
+  //
   // INFO: 21 characters per line, 4 lines on small font (set1X)
   // 11 characters per line on large font (set2X)
   if (EnableDisplay)
@@ -229,6 +261,15 @@ void user_loop()
         oled.println("INA Vbat: " + String(INADAT.V, 2));
         oled.println("INA Ibat: " + String(INADAT.I, 2));
         oled.println("INA PWR:  " + String(Calc.P, 1));
+        NextDataSet = 3;
+        break;
+      case 3:
+        oled.clear();
+        oled.set1X();
+        oled.println("Charge FET: " + String(Bool_Decoder[(int)bms.get.chargeFetState]));
+        oled.println("Disch FET:  " + String(Bool_Decoder[(int)bms.get.disChargeFetState]));
+        oled.println("SSR1:       " + String(Bool_Decoder[(int)Ctrl_SSR1]));
+        oled.println("Uptime:     " + String(UptimeSeconds));
         NextDataSet = 0;
         break;
       }
@@ -243,7 +284,6 @@ void user_loop()
       oled.clear();
       OledCleared = true;
     }
-
   }
 
 #ifdef ONBOARD_LED

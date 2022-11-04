@@ -23,6 +23,7 @@ This is work-in-progress. If everything works as expected, a hardware part might
 - Firmware-upgrading the ESP possibly breaks communication to the Daly BMS. In that case, you need to re-connect the BT-coin and press the button on it, then reconnect the UART-wires and it will work again. So it would probably be a good idea to wire the "button" (yellow wire on my original Daly BT cable) to an ESP GPIO if possible.. this is a bit nasty and happens every now and then after flashing. I've tried to send an BMS reset command to the Daly when this error occurs, but as expected this does not cure the fault condition.
 - set the "sleep waiting time" on the Daly BMS to **35535** to avoid sleep mode
 - Disabling the DISCHARGE MOSFET on the Daly-BMS also seems to break charging for my setup. I use a small BQ24650 based MPPT-PV charger, and i assume that disabling the DISCHARGE FET confuses the charger-IC. atm the charger needs a reset by shorting the PV input daily. :-/
+- Daly BMS will enter sleeping mode when battery/cell reaches configured undervoltage. Serial comm will fail at that stage, but recovers when undervoltage condition resolves and BMS comes up again.
 
 # Version History
 
@@ -41,3 +42,8 @@ This is work-in-progress. If everything works as expected, a hardware part might
 - Extended MQTT communication
 - Added ability to manually set charge / discharge MOSFET states on Daly though MQTT
 - solved possible ESP crash/reset after several hours caused by excessive `oled.clear()` calls
+
+## v0.5.0
+- Added MQTT-switchable SSR through GPIO5
+- minor improvements
+- ESP still resetting itself rarely, suspecting unstable power supply (changed supply to 5V instead of 3.3V)
