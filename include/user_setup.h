@@ -14,8 +14,6 @@
 #include <SSD1306AsciiWire.h>
 #include <daly-bms-uart.h>
 #include <INA226.h>
-// for debugging (get reset reason)
-#include "esp32s2/rom/rtc.h"
 
 // Declare user setup, main and custom functions
 extern void user_setup();
@@ -63,7 +61,7 @@ extern bool Ctrl_SSR1;
 #define INA_MIN_I 0.005 // measured currents below +/-5mA will be discarded
 
 // Battery settings
-#define BAT_ESTIMATED_WS 270000 // rough Ws (Watt seconds) of the connected battery; use 50% of actual capacity - just a starting value, will be updated during charge/discharge cycles
+#define BAT_ESTIMATED_WS 296000 // rough Ws (Watt seconds) of the connected battery; use 50% of actual capacity - just a starting value, will be updated during charge/discharge cycles
 
 // MQTT Data update interval
 // Send MQTT data ever x seconds

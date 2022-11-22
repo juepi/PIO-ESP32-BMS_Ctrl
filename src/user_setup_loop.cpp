@@ -98,6 +98,13 @@ void user_loop()
         // We've got a new max. Ws value for the battery, remember it
         Calc.max_Ws = Calc.Ws;
       }
+      else if (Calc.Ws < 0)
+      {
+        // Energy stored in the battery can never be less than 0
+        // this might happen when ESP resets while discharging
+        Calc.Ws = 0;
+      }
+
       Calc.SOC = (Calc.Ws / Calc.max_Ws) * 100;
     }
     else
@@ -134,7 +141,9 @@ void user_loop()
       mqttClt.publish(t_DLSw, String(Bool_Decoder[(int)bms.get.disChargeFetState]).c_str(), true);
       mqttClt.publish(t_DCSw, String(Bool_Decoder[(int)bms.get.chargeFetState]).c_str(), true);
       mqttClt.publish(t_DTemp, String(bms.get.tempAverage).c_str(), true);
-      mqttClt.publish(t_Ctrl_StatT, String("ok_" + String(rtc_get_reset_reason(0))).c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("ok").c_str(), true);
+      // Add some delay for WiFi processing
+      delay(100);
     }
     else
     {
@@ -151,6 +160,8 @@ void user_loop()
     mqttClt.publish(t_C_Wh, String((Calc.Ws / 3600), 1).c_str(), true);
 
     LastDataUpdate = UptimeSeconds;
+    // Add some more delay for WiFi processing
+    delay(200);
   }
 
   //
@@ -164,7 +175,7 @@ void user_loop()
   }
 
   // Disable SSR1 when battery voltage is low and no more current running out of the battery
-  // Note: "Battery discharged" voltage quite high due to my special setup (AC powered supply in parallel)
+  // Note: "Battery discharged" voltage quite high due to my special setup (AC powered 12VDC supply in parallel)
   if (Ctrl_SSR1 && INADAT.V <= 12.3f && INADAT.I >= -0.1f && INADAT.I <= 0.0f)
   {
     Ctrl_SSR1 = false;
