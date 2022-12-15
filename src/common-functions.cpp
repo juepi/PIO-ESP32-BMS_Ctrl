@@ -61,6 +61,7 @@ bool MqttConnectToBroker()
             MqttSubscribe(t_Ctrl_CSw);
             MqttSubscribe(t_Ctrl_LSw);
             MqttSubscribe(t_Ctrl_SSR1);
+            MqttSubscribe(t_Ctrl_SSR2);
             delay(200);
             break;
         }
@@ -331,6 +332,24 @@ void MqttCallback(char *topic, byte *payload, unsigned int length)
         else
         {
             DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid Ctrl_SSR1: " + String(msgString));
+            delay(200);
+        }
+    }
+    else if (String(topic) == t_Ctrl_SSR2)
+    {
+        if (msgString == "on")
+        {
+            Ctrl_SSR2 = true;
+            ReceivedTopics++;
+        }
+        else if (msgString == "off")
+        {
+            Ctrl_SSR2 = false;
+            ReceivedTopics++;
+        }
+        else
+        {
+            DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid Ctrl_SSR2: " + String(msgString));
             delay(200);
         }
     }

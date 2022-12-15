@@ -2,7 +2,7 @@
  * ESP32 Template
  * ==================
  * User specific function "user_loop" called in main loop
- * User specific funtion "user_setup" called in setup loop
+ * User specific funtion "user_setup" called in setup function
  * Add stuff you want to run here
  */
 #include "setup.h"
@@ -22,9 +22,10 @@ bool INA_avail = false;
 int Ctrl_CSw = 2;
 int Ctrl_LSw = 2;
 bool Ctrl_SSR1 = false;
+bool Ctrl_SSR2 = false;
 
 /*
- * User Setup Loop
+ * User Setup Function
  * ========================================================================
  */
 void user_setup()
@@ -32,7 +33,9 @@ void user_setup()
   Wire.begin(I2C_SDA, I2C_SCL);
   pinMode(BUT1, INPUT_PULLDOWN);
   pinMode(SSR1, OUTPUT);
+  pinMode(SSR2, OUTPUT);
   digitalWrite(SSR1, LOW);
+  digitalWrite(SSR2, LOW);
   oled.begin(&Adafruit128x32, OLED_ADDRESS);
   oled.setFont(Adafruit5x7);
   oled.clear();
@@ -74,6 +77,9 @@ void user_loop()
   static const char *Stat_Decoder[] = {"FAIL", "OK"};
   static const char *Bool_Decoder[] = {"off", "on"};
   static bool OledCleared = false;
+  static uint32_t LastBalancerEnable = 0;
+  static short UpdAvgArrIndx = 0;
+  static uint32_t LastAvgCalc = 0;
 
   //
   // Gather data every second
@@ -127,6 +133,7 @@ void user_loop()
   //
   if ((UptimeSeconds - LastDataUpdate) >= DATA_UPDATE_INTERVAL && mqttClt.connected())
   {
+    LastDataUpdate = UptimeSeconds;
     // Daly BMS and Controller Data
     if (BMSresponding)
     {
@@ -159,33 +166,114 @@ void user_loop()
     mqttClt.publish(t_C_MaxWh, String((Calc.max_Ws / 3600), 3).c_str(), true);
     mqttClt.publish(t_C_Wh, String((Calc.Ws / 3600), 1).c_str(), true);
 
-    LastDataUpdate = UptimeSeconds;
     // Add some more delay for WiFi processing
     delay(200);
   }
 
   //
-  // Load handling (SSR1)
+  // Update 1hr power average every 6 minutes
+  //
+  if ((UptimeSeconds - LastAvgCalc) >= 360)
+  {
+    LastAvgCalc = UptimeSeconds;
+    // get power avg of the prev 6 minutes and add it to the averaging data
+    Calc.P_Avg_Arr[UpdAvgArrIndx] = (Calc.Ws - Calc.P_Avg_Prev_Ws) / 360;
+    Calc.P_Avg_Prev_Ws = Calc.Ws;
+    // rotate to next array element
+    UpdAvgArrIndx++;
+    if (UpdAvgArrIndx > 9)
+    {
+      UpdAvgArrIndx = 0;
+    }
+    // Recalculate 1hr power average
+    float Pavg_Sum = 0;
+    for (int i = 0; i < 10; i++)
+    {
+      Pavg_Sum += Calc.P_Avg_Arr[i];
+    }
+    Calc.P_Avg_1h = Pavg_Sum / 10;
+    mqttClt.publish(t_C_AvgP, String(Calc.P_Avg_1h, 1).c_str(), true);
+    // Add some delay for WiFi processing
+    delay(100);
+  }
+
+  //
+  // Load Controller (SSR1)
   //
   // If a Cell has reached its charge limit, enable SSR1 (load)
   if (bms.alarm.levelOneCellVoltageTooHigh || bms.alarm.levelTwoCellVoltageTooHigh)
   {
     Ctrl_SSR1 = true;
     mqttClt.publish(t_Ctrl_SSR1, String("on").c_str(), true);
+    // Add some delay for WiFi processing
+    delay(100);
   }
-
   // Disable SSR1 when battery voltage is low and no more current running out of the battery
   // Note: "Battery discharged" voltage quite high due to my special setup (AC powered 12VDC supply in parallel)
   if (Ctrl_SSR1 && INADAT.V <= 12.3f && INADAT.I >= -0.1f && INADAT.I <= 0.0f)
   {
     Ctrl_SSR1 = false;
     mqttClt.publish(t_Ctrl_SSR1, String("off").c_str(), true);
+    // Add some delay for WiFi processing
+    delay(100);
     // battery is "empty" now
     Calc.Ws = 0;
   }
 
   //
-  // Handle desired Daly MOSFET charge / discharge switch states
+  // Active Balancer Controller (SSR2)
+  //
+  if (Ctrl_SSR2)
+  {
+    // Balancer is active
+    // If balancer is running for at least BAL_MIN_ON_DUR..
+    // Note: this check is always true if the Balancer
+    // has been manually enabled thorugh MQTT, so we don't bother about this speial case.
+    if ((UptimeSeconds - LastBalancerEnable) > BAL_MIN_ON_DUR)
+    {
+      // ..check if any cell is below BAL_OFF_CELLV
+      for (int i = 0; i < bms.get.numberOfCells; i++)
+      {
+        if (bms.get.cellVmV[i] < BAL_OFF_CELLV)
+        {
+          // Low cell voltage threshold reached, disable Balancer
+          Ctrl_SSR2 = false;
+          mqttClt.publish(t_Ctrl_SSR2, String("off").c_str(), true);
+          // Add some delay for WiFi processing
+          delay(100);
+          // end loop, one cell below threshold is enough
+          break;
+        }
+      }
+    }
+  }
+  else
+  {
+    // Balancer is inactive
+    // If 1hr Power average is above threshold..
+    if (Calc.P_Avg_1h > BAL_ON_MIN_PWRAVG)
+    {
+      // ..check if any cell is above BAL_ON_CELLV
+      for (int i = 0; i < bms.get.numberOfCells; i++)
+      {
+        if (bms.get.cellVmV[i] > BAL_ON_CELLV)
+        {
+          // High cell voltage threshold reached, enable Balancer
+          Ctrl_SSR2 = true;
+          mqttClt.publish(t_Ctrl_SSR2, String("on").c_str(), true);
+          // Add some delay for WiFi processing
+          delay(100);
+          // remember when we've enabled the Balancer
+          LastBalancerEnable = UptimeSeconds;
+          // end loop, one cell above threshold is enough
+          break;
+        }
+      }
+    }
+  }
+
+  //
+  // Set desired Daly MOSFET charge / discharge switch states
   //
   if (Ctrl_CSw < 2)
   {
@@ -221,7 +309,7 @@ void user_loop()
   }
 
   //
-  // Handle SSR1 state
+  // Set desired SSR1 state
   //
   if (Ctrl_SSR1 != (bool)digitalRead(SSR1))
   {
@@ -232,6 +320,21 @@ void user_loop()
     else
     {
       digitalWrite(SSR1, LOW);
+    }
+  }
+
+  //
+  // Set desired SSR2 state
+  //
+  if (Ctrl_SSR2 != (bool)digitalRead(SSR2))
+  {
+    if (Ctrl_SSR2)
+    {
+      digitalWrite(SSR2, HIGH);
+    }
+    else
+    {
+      digitalWrite(SSR2, LOW);
     }
   }
 

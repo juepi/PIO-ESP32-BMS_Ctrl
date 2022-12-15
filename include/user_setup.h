@@ -33,6 +33,7 @@ extern bool INA_avail;
 extern int Ctrl_CSw;
 extern int Ctrl_LSw;
 extern bool Ctrl_SSR1;
+extern bool Ctrl_SSR2;
 
 // I2C Pins
 #define I2C_SCL 39
@@ -44,7 +45,8 @@ extern bool Ctrl_SSR1;
 
 // User SSR
 // HIGH level -> SSR is switched ON
-#define SSR1 5
+#define SSR1 5 // Battery Load Switch
+#define SSR2 3 // Active Balancer Enable
 
 // UART Connection to BMS (defaults to GPIO17 for TXD and GPIO18 for RXD on ESP32-S2)
 #define DALY_UART Serial1
@@ -63,9 +65,15 @@ extern bool Ctrl_SSR1;
 // Battery settings
 #define BAT_ESTIMATED_WS 296000 // rough Ws (Watt seconds) of the connected battery; use 50% of actual capacity - just a starting value, will be updated during charge/discharge cycles
 
+// Active Balancer Settings (SSR2)
+#define BAL_ON_CELLV 3400    // ENABLE balancer if a cell has reached this voltage level [mV]
+#define BAL_ON_MIN_PWRAVG 10 // AND the minimum power average of the last hour is +10W (-> battery charging)
+#define BAL_OFF_CELLV 3300   // DISABLE balancer if a cell has fallen below this voltage level [mV]
+#define BAL_MIN_ON_DUR 1800  // Minimum duration to keep balancer enabled [s]
+
 // MQTT Data update interval
 // Send MQTT data ever x seconds
-#define DATA_UPDATE_INTERVAL 60
+#define DATA_UPDATE_INTERVAL 120
 
 // MQTT Topics for BMS Controlling and Monitoring
 // Publish only
@@ -88,10 +96,12 @@ extern bool Ctrl_SSR1;
 #define t_Ctrl_StatU TOPTREE "CtrlStatUpt" // ESP Controller uptime provided through MQTT
 #define t_C_Wh TOPTREE "Calc_Wh"           // Currently calculated energy stored in the battery
 #define t_C_MaxWh TOPTREE "Calc_maxWh"     // Calculated battery capacity
+#define t_C_AvgP TOPTREE "Calc_AvgP"       // Calculated 1hr power average
 // Subscriptions
 #define t_Ctrl_CSw TOPTREE "Ctrl_CSw"   // User-desired state of charging MOSFETs (on/off or dnc for "do not change")
 #define t_Ctrl_LSw TOPTREE "Ctrl_LSw"   // User-desired state of load / discharging MOSFETs (on/off or dnc)
 #define t_Ctrl_SSR1 TOPTREE "Ctrl_SSR1" // User-desired state of SSR1 GPIO (on/off)
+#define t_Ctrl_SSR2 TOPTREE "Ctrl_SSR2" // User-desired state of SSR2 GPIO (on/off)
 
 // Data structures
 struct INA226_Raw
@@ -107,6 +117,10 @@ struct Calculations
     float Ws = 0;
     float max_Ws = BAT_ESTIMATED_WS;
     float P = 0;
+    float P_Avg_1h = 0;
+    // Calculate 1h power average every 6 minutes
+    float P_Avg_Arr[10] = {0};
+    float P_Avg_Prev_Ws = 0;
 };
 
 #endif // USER_SETUP_H
