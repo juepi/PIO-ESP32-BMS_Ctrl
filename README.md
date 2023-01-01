@@ -29,8 +29,11 @@ The code is finished so far, the last (self caused) problem with occasional ESP 
 - Concerning **active balancer selection**, you might want to use a capacitive balancer, as these (to my understanding) manage to balance all cells in your battery pack, not just adjacent ones.
 - With the active balancer up and running, you might want to disable the (useless) internal passive Daly BMS balancer (BT-coin + Daly App)
 
+## Future Improvements
+- It is probably a good idea if the ESP could communicate with the solar charger. For a future version, i would probably go for a [Victron charger with a VE.direct interface](https://www.victronenergy.com/solar-charge-controllers/smartsolar-100-30-100-50) to be able to fetch the charging state. The currently used method by monitoring the voltage measured by the INA226 is a bit clumsy (especially with a cheap charger). 
+
 ## What the code does
-Primarily, the code reads Battery-pack and cell status from the Daly BMS and sends it to your MQTT broker and to a locally attached OLED display at a configurable interval. It automatically switches the load-SSR on if the batteries are fully charged (Daly BMS reports `bms.alarm.levelOneCellVoltageTooHigh`) and off if the batteries are drained (measured battery current by the INA226 reaches 0 and battery voltage less than 12.3V - this is a special treatment due to my local redundant setup). Of course the Load-SSR can also be switched manually by setting the corresponding MQTT topic to `on` or `off`.  
+Primarily, the code reads Battery-pack and cell status from the Daly BMS and sends it to your MQTT broker and to a locally attached OLED display at a configurable interval. It automatically switches the load-SSR on if the batteries are fully charged (2 configurable SOC limits) and off if the batteries are drained (also configureable SOC limit). Of course the Load-SSR can also be switched manually by setting the corresponding MQTT topic to `on` or `off`.  
 As mentioned, the SOC reported by the Daly is incorrect, especially when charging / discharging the battery with < 1.1A. For this reason, the firmware maintains a "calculated SOC", which is based on more accurate voltage and current readouts of the INA226.  
 You may manually switch Daly Charge and Discharge FETs on/off through dedicated MQTT topics to `on` or `off`, but be warned that this might confuse your charger, i think due to the Low-side switching nature of the Daly BMS. The code is not automatically handling the Daly FETs, however when monitoring the MQTT topics you will discover, that the BMS itself enables/disables the FETs on demand (in example, battery full -> Charge FET disabled).    
 Last but not least, the firmware (starting with v1.1.0) also allows you to handle an external active balancer through an additional SSR as recommended by [Andy](https://www.youtube.com/watch?v=yPmwrPOwC3g). However, i have added a second condition beside the 3.4V cell voltage: **we're only enabling the active balancer at a configurable mimimum solar power threshold**. This ensures that balancing only kicks in when the battery is reasonably charging (i have set it to 10W for my small setup).  
@@ -65,3 +68,8 @@ To configure the firmware for your needs, see files `user_setup.h` and `mqtt_ota
 ## v1.1.0
 - Added additional GPIO3 to control external active balancer
 - Added code to automatically enable/disable active balancer
+
+## v1.1.1
+- Minor code improvements on load (SSR1) and solar charger handling
+- Cleaned up full / empty battery detection
+- added additional "load enable" limit for sunny days (allowing you to enable load at earlier SOC)

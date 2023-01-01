@@ -63,7 +63,15 @@ extern bool Ctrl_SSR2;
 #define INA_MIN_I 0.005 // measured currents below +/-5mA will be discarded
 
 // Battery settings
-#define BAT_ESTIMATED_WS 296000 // rough Ws (Watt seconds) of the connected battery; use 50% of actual capacity - just a starting value, will be updated during charge/discharge cycles
+#define BAT_DESIGN_CAP 85  // rough Wh (Watt hours) of the connected battery; just a starting value, will be updated during charge/discharge cycles
+#define BAT_FULL_V 14.35f  // Full charge voltage (measured by INA226); this is the peak voltage at which your solar charger cuts off charging
+#define BAT_EMPTY_V 12.15f // Battery empty voltage; CSOC will be set to 0, load will be disabled (NOTE: may be set lower! quite high due to my special setup!)
+
+// Load Settings (SSR1)
+#define ENABLE_LOAD_CSOC 100    // calculated SOC at which to enable the load (SSR1)
+#define DISABLE_LOAD_CSOC 0     // CSOC at which load will be disconnected
+#define HIGH_PV_AVG_PWR 30      // If the average charging power is higher than this..
+#define HIGH_PV_EN_LOAD_CSOC 85 //.. enable the load at an earlier SOC to avoid wasting PV energy
 
 // Active Balancer Settings (SSR2)
 #define BAL_ON_CELLV 3400    // ENABLE balancer if a cell has reached this voltage level [mV]
@@ -91,15 +99,15 @@ extern bool Ctrl_SSR2;
 #define t_IV TOPTREE "INA_V"               // Battery voltage reported by INA
 #define t_II TOPTREE "INA_I"               // Battery current reported by INA
 #define t_IP TOPTREE "INA_P"               // Power reported by INA
-#define t_C_SOC TOPTREE "Calc_SOC"         // Calculated SOC based ina INA data ("relative state of charge")
-#define t_Ctrl_StatT TOPTREE "CtrlStatTXT" // ESP Controller status text and last reset reason provided through MQTT (basically to check if UART to Daly BMS is OK)
-#define t_Ctrl_StatU TOPTREE "CtrlStatUpt" // ESP Controller uptime provided through MQTT
 #define t_C_Wh TOPTREE "Calc_Wh"           // Currently calculated energy stored in the battery
 #define t_C_MaxWh TOPTREE "Calc_maxWh"     // Calculated battery capacity
+#define t_C_SOC TOPTREE "Calc_SOC"         // Calculated SOC based on INA data ("relative state of charge")
+#define t_Ctrl_StatT TOPTREE "CtrlStatTXT" // ESP Controller status text and last reset reason provided through MQTT (basically to check if UART to Daly BMS is OK)
+#define t_Ctrl_StatU TOPTREE "CtrlStatUpt" // ESP Controller uptime provided through MQTT
 #define t_C_AvgP TOPTREE "Calc_AvgP"       // Calculated 1hr power average
 // Subscriptions
-#define t_Ctrl_CSw TOPTREE "Ctrl_CSw"   // User-desired state of charging MOSFETs (on/off or dnc for "do not change")
-#define t_Ctrl_LSw TOPTREE "Ctrl_LSw"   // User-desired state of load / discharging MOSFETs (on/off or dnc)
+#define t_Ctrl_CSw TOPTREE "Ctrl_CSw"   // User-desired state of Daly charging MOSFETs (on/off or dnc for "do not change")
+#define t_Ctrl_LSw TOPTREE "Ctrl_LSw"   // User-desired state of Daly discharging MOSFETs (on/off or dnc)
 #define t_Ctrl_SSR1 TOPTREE "Ctrl_SSR1" // User-desired state of SSR1 GPIO (on/off)
 #define t_Ctrl_SSR2 TOPTREE "Ctrl_SSR2" // User-desired state of SSR2 GPIO (on/off)
 
@@ -113,13 +121,12 @@ struct INA226_Raw
 
 struct Calculations
 {
-    float SOC = 0;
-    float Ws = 0;
-    float max_Ws = BAT_ESTIMATED_WS;
-    float P = 0;
-    float P_Avg_1h = 0;
-    // Calculate 1h power average every 6 minutes
-    float P_Avg_Arr[10] = {0};
+    float SOC = 100;                      // Calculated SOC (relative SOC) - assume a fully charged battery at firmware start
+    float Ws = BAT_DESIGN_CAP * 3600;     // usable Energy stored in battery (counting energy when battery voltage is between BAT_EMPTY_V and BAT_FULL_V)
+    float max_Ws = BAT_DESIGN_CAP * 3600; // initial battery design capacity (updated after every charge cycle)
+    float P = 0;                          // currently measures power (updated every second)
+    float P_Avg_1h = 0;                   // 1h power average (updated every 6 minutes)
+    float P_Avg_Arr[10] = {0};            // helpers for power average calculation
     float P_Avg_Prev_Ws = 0;
 };
 

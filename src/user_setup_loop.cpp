@@ -90,6 +90,9 @@ void user_loop()
     oldMillis = millis();
     UptimeSeconds++;
 
+    // Update data from BMS
+    BMSresponding = bms.update();
+
     // Get data from INA226
     INADAT.V = ina.readBusVoltage();
     INADAT.I = ina.readShuntCurrent();
@@ -107,10 +110,9 @@ void user_loop()
       else if (Calc.Ws < 0)
       {
         // Energy stored in the battery can never be less than 0
-        // this might happen when ESP resets while discharging
+        // this might happen when ESP is flashed while discharging
         Calc.Ws = 0;
       }
-
       Calc.SOC = (Calc.Ws / Calc.max_Ws) * 100;
     }
     else
@@ -119,8 +121,18 @@ void user_loop()
       Calc.P = 0;
     }
 
-    // Update data from BMS
-    BMSresponding = bms.update();
+    // Check if battery is full..
+    if (bms.alarm.levelTwoPackVoltageTooHigh || bms.alarm.levelTwoCellVoltageTooHigh || INADAT.V > BAT_FULL_V)
+    {
+      Calc.SOC = 100;
+      Calc.max_Ws = Calc.Ws;
+    }
+    // ..or empty
+    else if (INADAT.V <= BAT_EMPTY_V)
+    {
+      Calc.SOC = 0;
+      Calc.Ws = 0;
+    }
 
     // Display enabled?
     EnableDisplay = (bool)digitalRead(BUT1);
@@ -200,24 +212,30 @@ void user_loop()
   //
   // Load Controller (SSR1)
   //
-  // If a Cell has reached its charge limit, enable SSR1 (load)
-  if (bms.alarm.levelOneCellVoltageTooHigh || bms.alarm.levelTwoCellVoltageTooHigh)
+  // If CSOC has reached the configured charge limit, enable load
+  if (!Ctrl_SSR1 && Calc.SOC >= ENABLE_LOAD_CSOC)
   {
     Ctrl_SSR1 = true;
     mqttClt.publish(t_Ctrl_SSR1, String("on").c_str(), true);
     // Add some delay for WiFi processing
     delay(100);
   }
-  // Disable SSR1 when battery voltage is low and no more current running out of the battery
-  // Note: "Battery discharged" voltage quite high due to my special setup (AC powered 12VDC supply in parallel)
-  if (Ctrl_SSR1 && INADAT.V <= 12.3f && INADAT.I >= -0.1f && INADAT.I <= 0.0f)
+  // if we have a really sunny day, enable load at the configured HIGH_PV limits
+  else if (!Ctrl_SSR1 && Calc.P_Avg_1h >= HIGH_PV_AVG_PWR && Calc.SOC >= HIGH_PV_EN_LOAD_CSOC)
+  {
+    Ctrl_SSR1 = true;
+    mqttClt.publish(t_Ctrl_SSR1, String("on").c_str(), true);
+    // Add some delay for WiFi processing
+    delay(100);
+  }
+
+  // Disable SSR1 when CSOC_DISABLE_LOAD is reached
+  if (Ctrl_SSR1 && Calc.SOC <= DISABLE_LOAD_CSOC)
   {
     Ctrl_SSR1 = false;
     mqttClt.publish(t_Ctrl_SSR1, String("off").c_str(), true);
     // Add some delay for WiFi processing
     delay(100);
-    // battery is "empty" now
-    Calc.Ws = 0;
   }
 
   //
@@ -228,7 +246,7 @@ void user_loop()
     // Balancer is active
     // If balancer is running for at least BAL_MIN_ON_DUR..
     // Note: this check is always true if the Balancer
-    // has been manually enabled thorugh MQTT, so we don't bother about this speial case.
+    // has been manually enabled through MQTT, so we don't bother about this special case.
     if ((UptimeSeconds - LastBalancerEnable) > BAL_MIN_ON_DUR)
     {
       // ..check if any cell is below BAL_OFF_CELLV
