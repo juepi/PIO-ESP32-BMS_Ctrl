@@ -34,9 +34,9 @@ The code is finished so far, the last (self caused) problem with occasional ESP 
 
 ## Future Improvements
 - ~~It is probably a good idea if the ESP could communicate with the solar charger. For a future version, i would probably go for a [Victron charger with a VE.Direct interface](https://www.victronenergy.com/solar-charge-controllers/smartsolar-100-30-100-50) to be able to fetch the charging state. The currently used method by monitoring the voltage measured by the INA226 is a bit clumsy (especially with a cheap charger).~~ **Included** in version 1.2.0.
-- The next release (2.0) will probably include **major changes**, like:
-o drop SOC calculation, read it from a Victron SmartShunt instead
-o remove support for the INA226, only use data from VE.direct (charger + shunt)
+- The next release (2.0) will probably include **major changes**, like:  
+    - drop SOC calculation, read it from a Victron SmartShunt instead  
+    - remove support for the INA226, only use data from VE.direct (charger + shunt)  
 
 ## What the code does
 Primarily, the code reads Battery-pack and cell status from the Daly BMS and sends it to your MQTT broker and to a locally attached OLED display at a configurable interval. It automatically switches the load-SSR on if the batteries are fully charged (2 configurable SOC limits) and off if the batteries are drained (also configureable SOC limit). Of course the Load-SSR can also be switched manually by setting the corresponding MQTT topic to `on` or `off`.  
