@@ -7,83 +7,144 @@
 
 #include "mqtt-ota-config.h"
 
+//
 // Define required user libraries here
-// Don't forget to add them into platformio.ini
+// Don't forget to add them into platformio.ini or the /lib directory
+//
 #include <Wire.h>
 #include <SSD1306Ascii.h>
 #include <SSD1306AsciiWire.h>
 #include <daly-bms-uart.h>
 #include <INA226.h>
+#ifdef VEDIR_CHRG
+#include <VeDirectFrameHandler.h>
+#include <SoftwareSerial.h>
+#endif // VEDIR_CHRG
 
-// Declare user setup, main and custom functions
+//
+// Declare user_setup, user_loop and custom global functions
+//
 extern void user_setup();
 extern void user_loop();
 
+//
 // Declare global user specific objects
-// extern abc xyz;
+//
 extern SSD1306AsciiWire oled;
 extern Daly_BMS_UART bms;
 extern INA226 ina;
+#ifdef VEDIR_CHRG
+extern SoftwareSerial VEDSer_Chrg1;
+extern VeDirectFrameHandler VED_Chrg1;
+#endif // VEDIR_CHRG
 
+//
 // Global user vars
-extern bool INA_avail;
+//
+extern bool INA_avail; // INA226 successfully initialized?
 // Set by MQTT topics
-// Desired Daly MOSFET switch states, either on, off or dnc (do not change)
-// if set to on/off, will be set ONCE by the ESP, then reset to dnc
-extern int Ctrl_CSw;
-extern int Ctrl_LSw;
-extern bool Ctrl_SSR1;
-extern bool Ctrl_SSR2;
+extern int Ctrl_CSw;   // Desired Daly MOSFET switch states, either on, off or dnc (do not change)
+extern int Ctrl_LSw;   // if set to on/off, will be set ONCE by the ESP, then reset to dnc
+extern bool Ctrl_SSR1; // SSR1 switch state (on/off)
+extern bool Ctrl_SSR2; // SSR2 switch state (on/off)
 
-// I2C Pins
+//
+// I2C settings
+//
+// Pins
 #define I2C_SCL 39
 #define I2C_SDA 37
 
-// User Button (use internal Pulldown)
-// HIGH level -> enable display
-#define BUT1 7
+//
+// User Button (uses internal Pulldown)
+//
+#define BUT1 7 // Pull to 3V3 to enable display
 
+//
 // User SSR
 // HIGH level -> SSR is switched ON
+//
 #define SSR1 5 // Battery Load Switch
 #define SSR2 3 // Active Balancer Enable
 
-// UART Connection to BMS (defaults to GPIO17 for TXD and GPIO18 for RXD on ESP32-S2)
+//
+// UART Connection to Daly BMS
+// (defaults to GPIO17 for TXD and GPIO18 for RXD on ESP32-S2)
+//
 #define DALY_UART Serial1
 
-// OLED Settings
+//
+// OLED settings
+//
 #define OLED_ADDRESS 0x3C
-// Switch displayed DataSets every x seconds
-#define DISPLAY_REFRESH_INTERVAL 5
+#define DISPLAY_REFRESH_INTERVAL 5 // Switch displayed DataSets every x seconds
 
+//
 // INA226 wattmeter settings
+//
 #define INA_ADDRESS 0x40
 #define INA_SHUNT 0.002 // 2mOhm shunt (INA configuration setting)
 #define INA_MAX_I 5     // max. expected current 5A (INA configuration setting)
 #define INA_MIN_I 0.005 // measured currents below +/-5mA will be discarded
 
+//
 // Battery settings
+//
 #define BAT_DESIGN_CAP 85  // rough Wh (Watt hours) of the connected battery; just a starting value, will be updated during charge/discharge cycles
 #define BAT_FULL_V 14.35f  // Full charge voltage (measured by INA226); this is the peak voltage at which your solar charger cuts off charging
 #define BAT_EMPTY_V 12.15f // Battery empty voltage; CSOC will be set to 0, load will be disabled (NOTE: may be set lower! quite high due to my special setup!)
 
-// Load Settings (SSR1)
-#define ENABLE_LOAD_CSOC 100    // calculated SOC at which to enable the load (SSR1)
+//
+// Load settings (SSR1)
+//
+#define ENABLE_LOAD_CSOC 95     // calculated SOC at which to enable the load (SSR1)
 #define DISABLE_LOAD_CSOC 0     // CSOC at which load will be disconnected
 #define HIGH_PV_AVG_PWR 30      // If the average charging power is higher than this..
-#define HIGH_PV_EN_LOAD_CSOC 85 //.. enable the load at an earlier SOC to avoid wasting PV energy
+#define HIGH_PV_EN_LOAD_CSOC 80 //.. enable the load at an earlier SOC to avoid wasting PV energy
 
+//
 // Active Balancer Settings (SSR2)
+//
 #define BAL_ON_CELLV 3400    // ENABLE balancer if a cell has reached this voltage level [mV]
 #define BAL_ON_MIN_PWRAVG 10 // AND the minimum power average of the last hour is +10W (-> battery charging)
 #define BAL_OFF_CELLV 3300   // DISABLE balancer if a cell has fallen below this voltage level [mV]
 #define BAL_MIN_ON_DUR 1800  // Minimum duration to keep balancer enabled [s]
 
-// MQTT Data update interval
-// Send MQTT data ever x seconds
-#define DATA_UPDATE_INTERVAL 120
+//
+// Victron VE.Direct settings
+//
+// Global Settings
+#define VED_BAUD 19200 // Baud rate (used for all VE.Direct devices)
 
-// MQTT Topics for BMS Controlling and Monitoring
+// SmartSolar 75/15 Charger settings (charger #1)
+#ifdef VEDIR_CHRG       // Enabled in platformio.ini?
+#define VED_CHRG1_RX 33 // RX for SoftwareSerial
+#define VED_CHRG1_TX 21 // TX for SoftwareSerial (unused)
+// Array elements of VED_Chrg1.veValue which will be sent to the MQTT broker (ATTN: valid for SmartSolar 75/15 with firmware 1.61)
+// See Victron Documentation: https://www.victronenergy.com/support-and-downloads/technical-information# --> VE.Direct protocol
+#define VCHRG_PPV 6  // present PV Power
+#define VCHRG_IB 4   // charging current
+#define VCHRG_VB 3   // battery voltage
+#define VCHRG_CS 7   // charger state
+#define VCHRG_ERR 10 // error state
+#define VCHRG_H20 14 // yield today (in 10Wh increments)
+// MQTT Topics for published data
+#define t_VED_C1_PPV TOPTREE "VC1_PPV"
+#define t_VED_C1_IB TOPTREE "VC1_IB"
+#define t_VED_C1_VB TOPTREE "VC1_VB"
+#define t_VED_C1_ERR TOPTREE "VC1_ERR"
+#define t_VED_C1_CS TOPTREE "VC1_CS"
+#define t_VED_C1_H20 TOPTREE "VC1_H20"
+#endif // VEDIR_CHRG
+
+//
+// MQTT Data update interval
+//
+#define DATA_UPDATE_INTERVAL 120 // Send MQTT data ever x seconds
+
+//
+// MQTT Topics for BMS, Load and Balancer Controlling and Monitoring
+//
 // Publish only
 #define t_DSOC TOPTREE "Daly_SOC"          // BMS Battery State of Charge(useless, see current)
 #define t_DV TOPTREE "Daly_V"              // BMS Battery Voltage
@@ -111,7 +172,9 @@ extern bool Ctrl_SSR2;
 #define t_Ctrl_SSR1 TOPTREE "Ctrl_SSR1" // User-desired state of SSR1 GPIO (on/off)
 #define t_Ctrl_SSR2 TOPTREE "Ctrl_SSR2" // User-desired state of SSR2 GPIO (on/off)
 
+//
 // Data structures
+//
 struct INA226_Raw
 {
     float V = 0;

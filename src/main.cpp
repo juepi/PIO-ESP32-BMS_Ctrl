@@ -16,7 +16,6 @@
  */
 void loop()
 {
-  //delay(200);
   // Check connection to MQTT broker, subscribe and update topics
   MqttUpdater();
 
@@ -40,17 +39,20 @@ void loop()
   DEBUG_PRINTLN("VCC = " + String(VCC) + " V");
   DEBUG_PRINT("Raw ADC Pin readout: ");
   DEBUG_PRINTLN(analogRead(VBAT_ADC_PIN));
-  delay(100);
+  WIFI_CLTNAME.flush();
 #endif
 
 #ifdef E32_DEEP_SLEEP
   // disconnect WiFi and go to sleep
   DEBUG_PRINTLN("Good night for " + String(DS_DURATION_MIN) + " minutes.");
+  WIFI_CLTNAME.flush();
   WiFi.disconnect();
   ESP.deepSleep(DS_DURATION_MIN * 60000000);
-#else
-  //DEBUG_PRINTLN("Loop finished, DeepSleep disabled. Restarting..");
-#endif
   // ATTN: Sketch continues to run for a short time after initiating DeepSleep, so pause here
-  //delay(5000);
+  delay(5000);
+#else
+  DEBUG_PRINTLN("Loop finished, DeepSleep disabled. Restarting..");
+#endif
+  // Flush WiFi TX data
+  WIFI_CLTNAME.flush();
 }

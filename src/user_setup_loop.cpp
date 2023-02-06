@@ -13,6 +13,12 @@ SSD1306AsciiWire oled;
 // Setup Daly BMS connector instance
 Daly_BMS_UART bms(DALY_UART);
 
+// Setup VE.Direct
+#ifdef VEDIR_CHRG
+SoftwareSerial VEDSer_Chrg1;
+VeDirectFrameHandler VED_Chrg1;
+#endif
+
 // Setup INA226 wattmeter instance (highly recommended! Daly far too imprecise!)
 INA226 ina(Wire);
 
@@ -52,6 +58,24 @@ void user_setup()
   {
     DEBUG_PRINTLN("Failed to initialize INA226!");
   }
+#ifdef VEDIR_CHRG
+  VEDSer_Chrg1.begin(VED_BAUD, SWSERIAL_8N1, VED_CHRG1_RX, VED_CHRG1_TX, false, 512);
+  if (!VEDSer_Chrg1)
+  {
+    DEBUG_PRINTLN("Failed to setup VEDSer_Chrg1! Make sure RX/TX pins are free to use for SoftwareSerial!");
+    while (1)
+    {
+      delay(500);
+    }
+  }
+  else
+  {
+    DEBUG_PRINTLN("Initialized VEDSer_Chrg1.");
+  }
+  // We don't need TX
+  VEDSer_Chrg1.enableIntTx(false);
+  VEDSer_Chrg1.flush();
+#endif
 }
 
 /*
@@ -65,6 +89,7 @@ void user_loop()
   //
   static bool BMSresponding = false;
   static bool EnableDisplay = false;
+  static bool FirstLoop = true;
   // Power Calculations / Readings
   static INA226_Raw INADAT;
   static Calculations Calc;
@@ -80,13 +105,27 @@ void user_loop()
   static uint32_t LastBalancerEnable = 0;
   static short UpdAvgArrIndx = 0;
   static uint32_t LastAvgCalc = 0;
+  static unsigned long VED_Chrg1_FrameSent = 0;
+
+  // Decode data from VE.Direct SoftwareSerial as often as possible
+#ifdef VEDIR_CHRG
+  if (VEDSer_Chrg1.available())
+  {
+    DEBUG_PRINTLN("VE.D Data avail");
+    while (VEDSer_Chrg1.available())
+    {
+      VED_Chrg1.rxData(VEDSer_Chrg1.read());
+      DEBUG_PRINT(".");
+    }
+    yield();
+  }
+#endif
 
   //
   // Gather data every second
   //
-  if ((millis() - oldMillis) >= 1000)
+  if ((millis() - oldMillis) >= 1000 || FirstLoop)
   {
-    // unsigned long error = millis() - oldMillis; // timing inaccuracy evaluation
     oldMillis = millis();
     UptimeSeconds++;
 
@@ -122,7 +161,7 @@ void user_loop()
     }
 
     // Check if battery is full..
-    if (bms.alarm.levelTwoPackVoltageTooHigh || bms.alarm.levelTwoCellVoltageTooHigh || INADAT.V > BAT_FULL_V)
+    if (bms.alarm.levelOnePackVoltageTooHigh || bms.alarm.levelOneCellVoltageTooHigh || INADAT.V > BAT_FULL_V)
     {
       Calc.SOC = 100;
       Calc.max_Ws = Calc.Ws;
@@ -136,14 +175,12 @@ void user_loop()
 
     // Display enabled?
     EnableDisplay = (bool)digitalRead(BUT1);
-    // DEBUG_PRINTLN("Uptime " + String(UptimeSeconds));
-    // DEBUG_PRINTLN("Millis-Diff: " + String(error));
   }
 
   //
   // Publish data to MQTT broker
   //
-  if ((UptimeSeconds - LastDataUpdate) >= DATA_UPDATE_INTERVAL && mqttClt.connected())
+  if (((UptimeSeconds - LastDataUpdate) >= DATA_UPDATE_INTERVAL && mqttClt.connected()) || FirstLoop)
   {
     LastDataUpdate = UptimeSeconds;
     // Daly BMS and Controller Data
@@ -162,7 +199,8 @@ void user_loop()
       mqttClt.publish(t_DTemp, String(bms.get.tempAverage).c_str(), true);
       mqttClt.publish(t_Ctrl_StatT, String("ok").c_str(), true);
       // Add some delay for WiFi processing
-      delay(100);
+      WIFI_CLTNAME.flush();
+      // delay(200);
     }
     else
     {
@@ -177,15 +215,26 @@ void user_loop()
     mqttClt.publish(t_C_SOC, String(Calc.SOC, 1).c_str(), true);
     mqttClt.publish(t_C_MaxWh, String((Calc.max_Ws / 3600), 3).c_str(), true);
     mqttClt.publish(t_C_Wh, String((Calc.Ws / 3600), 1).c_str(), true);
-
-    // Add some more delay for WiFi processing
-    delay(200);
+    WIFI_CLTNAME.flush();
+    // delay(100);
+#ifdef VEDIR_CHRG
+    if (VED_Chrg1.frameCounter > VED_Chrg1_FrameSent)
+    {
+      mqttClt.publish(t_VED_C1_PPV, String(VED_Chrg1.veValue[VCHRG_PPV]).c_str(), true);
+      mqttClt.publish(t_VED_C1_IB, String((atof(VED_Chrg1.veValue[VCHRG_IB]) / 1000), 2).c_str(), true);
+      mqttClt.publish(t_VED_C1_VB, String((atof(VED_Chrg1.veValue[VCHRG_VB]) / 1000), 2).c_str(), true);
+      mqttClt.publish(t_VED_C1_CS, String(VED_Chrg1.veValue[VCHRG_CS]).c_str(), true);
+      mqttClt.publish(t_VED_C1_ERR, String(VED_Chrg1.veValue[VCHRG_ERR]).c_str(), true);
+      mqttClt.publish(t_VED_C1_H20, String((atoi(VED_Chrg1.veValue[VCHRG_H20]) * 10)).c_str(), true);
+      VED_Chrg1_FrameSent = VED_Chrg1.frameCounter;
+    }
+#endif
   }
 
   //
   // Update 1hr power average every 6 minutes
   //
-  if ((UptimeSeconds - LastAvgCalc) >= 360)
+  if (((UptimeSeconds - LastAvgCalc) >= 360) || FirstLoop)
   {
     LastAvgCalc = UptimeSeconds;
     // get power avg of the prev 6 minutes and add it to the averaging data
@@ -206,7 +255,7 @@ void user_loop()
     Calc.P_Avg_1h = Pavg_Sum / 10;
     mqttClt.publish(t_C_AvgP, String(Calc.P_Avg_1h, 1).c_str(), true);
     // Add some delay for WiFi processing
-    delay(100);
+    WIFI_CLTNAME.flush();
   }
 
   //
@@ -217,16 +266,12 @@ void user_loop()
   {
     Ctrl_SSR1 = true;
     mqttClt.publish(t_Ctrl_SSR1, String("on").c_str(), true);
-    // Add some delay for WiFi processing
-    delay(100);
   }
   // if we have a really sunny day, enable load at the configured HIGH_PV limits
   else if (!Ctrl_SSR1 && Calc.P_Avg_1h >= HIGH_PV_AVG_PWR && Calc.SOC >= HIGH_PV_EN_LOAD_CSOC)
   {
     Ctrl_SSR1 = true;
     mqttClt.publish(t_Ctrl_SSR1, String("on").c_str(), true);
-    // Add some delay for WiFi processing
-    delay(100);
   }
 
   // Disable SSR1 when CSOC_DISABLE_LOAD is reached
@@ -234,8 +279,6 @@ void user_loop()
   {
     Ctrl_SSR1 = false;
     mqttClt.publish(t_Ctrl_SSR1, String("off").c_str(), true);
-    // Add some delay for WiFi processing
-    delay(100);
   }
 
   //
@@ -257,8 +300,6 @@ void user_loop()
           // Low cell voltage threshold reached, disable Balancer
           Ctrl_SSR2 = false;
           mqttClt.publish(t_Ctrl_SSR2, String("off").c_str(), true);
-          // Add some delay for WiFi processing
-          delay(100);
           // end loop, one cell below threshold is enough
           break;
         }
@@ -279,8 +320,6 @@ void user_loop()
           // High cell voltage threshold reached, enable Balancer
           Ctrl_SSR2 = true;
           mqttClt.publish(t_Ctrl_SSR2, String("on").c_str(), true);
-          // Add some delay for WiFi processing
-          delay(100);
           // remember when we've enabled the Balancer
           LastBalancerEnable = UptimeSeconds;
           // end loop, one cell above threshold is enough
@@ -355,6 +394,8 @@ void user_loop()
       digitalWrite(SSR2, LOW);
     }
   }
+  // Add some delay for WiFi processing
+  WIFI_CLTNAME.flush();
 
   //
   // Update display
@@ -398,8 +439,13 @@ void user_loop()
       case 3:
         oled.clear();
         oled.set1X();
+#ifdef VEDIR_CHRG
+        oled.println("VE.D_C1 FrCnt: " + String(VED_Chrg1.frameCounter));
+        oled.println("VE.D_C1 PPV: " + String(VED_Chrg1.veValue[VCHRG_PPV]));
+#else
         oled.println("Charge FET: " + String(Bool_Decoder[(int)bms.get.chargeFetState]));
         oled.println("Disch FET:  " + String(Bool_Decoder[(int)bms.get.disChargeFetState]));
+#endif
         oled.println("SSR1:       " + String(Bool_Decoder[(int)Ctrl_SSR1]));
         oled.println("Uptime:     " + String(UptimeSeconds));
         NextDataSet = 0;
@@ -418,6 +464,11 @@ void user_loop()
     }
   }
 
+  // Reset FirstLoop
+  if (FirstLoop)
+  {
+    FirstLoop = false;
+  }
 #ifdef ONBOARD_LED
   // Toggle LED at each loop
   ToggleLed(LED, 100, 4);
