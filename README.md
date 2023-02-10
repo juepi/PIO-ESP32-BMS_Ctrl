@@ -86,3 +86,6 @@ As of **version 1.2.0**, the ability to read data from a **Victron SmartSolar 75
 - Replaced `delay()` for background tasks with `WiFiClient.flush()` and set `WiFiClient.setNoDelay(true)` (in setup function)
 - Sending first set of MQTT data directly at startup (first iteration of user_loop), instead of waiting for `DATA_UPDATE_INTERVAL`
 - Changed "battery full" indication to `bms.alarm.levelOne*VoltageTooHigh` (instead of `levelTwo`)
+
+## v1.2.1
+- Undone changes `WiFiClient.flush()` and set `WiFiClient.setNoDelay(true)` as this caused massive delays for receiving MQTT topics

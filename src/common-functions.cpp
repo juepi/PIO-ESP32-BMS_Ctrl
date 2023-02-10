@@ -117,7 +117,6 @@ void MqttUpdater()
     else
     {
         mqttClt.loop();
-        yield();
     }
 }
 
@@ -164,7 +163,6 @@ bool OTAUpdateHandler()
             mqttClt.publish(otaStatus_topic, String(UPDATEOK).c_str(), true);
             mqttClt.publish(ota_topic, String("off").c_str(), true);
             mqttClt.publish(otaInProgress_topic, String("off").c_str(), true);
-            WIFI_CLTNAME.flush();
             OTAupdate = false;
             OtaInProgress = false;
             OtaIPsetBySketch = true;
@@ -176,7 +174,6 @@ bool OTAUpdateHandler()
         if (!SentUpdateRequested)
         {
             mqttClt.publish(otaStatus_topic, String(UPDATEREQ).c_str(), true);
-            WIFI_CLTNAME.flush();
             SentUpdateRequested = true;
         }
         DEBUG_PRINTLN("OTA firmware update requested, waiting for upload..");
@@ -189,10 +186,10 @@ bool OTAUpdateHandler()
         {
             DEBUG_PRINTLN("Setting MQTT OTA-update reminder flag on broker..");
             mqttClt.publish(otaInProgress_topic, String("on").c_str(), true);
-            WIFI_CLTNAME.flush();
             OtaInProgress = true;
             SentOtaIPtrue = true;
             OtaIPsetBySketch = true;
+            delay(100);
         }
         // call OTA function to receive upload
         ArduinoOTA.handle();
@@ -206,11 +203,11 @@ bool OTAUpdateHandler()
             MqttUpdater();
             mqttClt.publish(otaStatus_topic, String(UPDATECANC).c_str(), true);
             mqttClt.publish(otaInProgress_topic, String("off").c_str(), true);
-            WIFI_CLTNAME.flush();
             OtaInProgress = false;
             OtaIPsetBySketch = true;
             SentOtaIPtrue = false;
             SentUpdateRequested = false;
+            delay(100);
             return false;
         }
     }

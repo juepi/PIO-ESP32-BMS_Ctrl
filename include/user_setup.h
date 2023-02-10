@@ -90,9 +90,10 @@ extern bool Ctrl_SSR2; // SSR2 switch state (on/off)
 //
 // Battery settings
 //
-#define BAT_DESIGN_CAP 85  // rough Wh (Watt hours) of the connected battery; just a starting value, will be updated during charge/discharge cycles
-#define BAT_FULL_V 14.35f  // Full charge voltage (measured by INA226); this is the peak voltage at which your solar charger cuts off charging
-#define BAT_EMPTY_V 12.15f // Battery empty voltage; CSOC will be set to 0, load will be disabled (NOTE: may be set lower! quite high due to my special setup!)
+#define BAT_DESIGN_CAP 85        // rough Wh (Watt hours) of the connected battery; just a starting value, will be updated during charge/discharge cycles
+#define BAT_FULL_V 14.35f        // Full charge voltage (measured by INA226); this is the peak voltage at which your solar charger cuts off charging
+#define BAT_EMPTY_V 12.15f       // Battery empty voltage; CSOC will be set to 0, load will be disabled (NOTE: may be set lower! quite high due to my special setup!)
+#define BAT_NEARLY_EMPTY_V 13.0f // Battery nearly drained; if INA226 voltage is below that threshold *at firmware boot*, CSOC will be set to 0%
 
 //
 // Load settings (SSR1)

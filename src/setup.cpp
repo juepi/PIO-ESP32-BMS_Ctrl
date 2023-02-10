@@ -91,10 +91,6 @@ void wifi_setup()
     DEBUG_PRINTLN(WiFi.localIP());
     DEBUG_PRINT("DHCP Hostname: ");
     DEBUG_PRINTLN(WIFI_DHCPNAME);
-
-    // Configure TCP No Delay (disables Nagle algorithm for caching small TX packets)
-     WIFI_CLTNAME.setNoDelay(true);
-
 #ifdef ONBOARD_LED
     // WiFi connected - blink once
     ToggleLed(LED, 200, 2);
