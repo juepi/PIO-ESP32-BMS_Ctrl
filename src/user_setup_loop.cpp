@@ -18,6 +18,10 @@ Daly_BMS_UART bms(DALY_UART);
 SoftwareSerial VEDSer_Chrg1;
 VeDirectFrameHandler VED_Chrg1;
 #endif
+#ifdef VEDIR_SHUNT
+SoftwareSerial VEDSer_Shnt;
+VeDirectFrameHandler VED_Shnt;
+#endif
 
 // Setup INA226 wattmeter instance (highly recommended! Daly far too imprecise!)
 INA226 ina(Wire);
@@ -66,6 +70,25 @@ void user_setup()
   VEDSer_Chrg1.flush();
 #endif
 
+#ifdef VEDIR_SHUNT
+  VEDSer_Shnt.begin(VED_BAUD, SWSERIAL_8N1, VED_SHNT_RX, VED_SHNT_TX, false, 512);
+  if (!VEDSer_Shnt)
+  {
+    DEBUG_PRINTLN("Failed to setup VEDSer_Shnt! Make sure RX/TX pins are free to use for SoftwareSerial!");
+    while (1)
+    {
+      delay(500);
+    }
+  }
+  else
+  {
+    DEBUG_PRINTLN("Initialized VEDSer_Shnt.");
+  }
+  // We don't need TX
+  VEDSer_Shnt.enableIntTx(false);
+  VEDSer_Shnt.flush();
+#endif
+
   INA_avail = ina.begin(INA_ADDRESS);
   if (INA_avail)
   {
@@ -107,7 +130,20 @@ void user_loop()
   static uint32_t LastBalancerEnable = 0;
   static short UpdAvgArrIndx = 0;
   static uint32_t LastAvgCalc = 0;
+#ifdef VEDIR_CHRG
   static unsigned long VED_Chrg1_FrameSent = 0;
+  // Int to Text conversion for Charger data
+  static const char *VED_MPPT_Decoder[] = {"Off", "V_I_Lim", "Active"};
+  static const char *VED_CS_Decoder[] = {"Off", "na", "Fault", "Bulk", "Absorption", "Float"};
+  static const char *VED_ConnStat_Decoder[] = {"Startup", "Ok", "Timeout"};
+  static VED_Charger_data VCHRG1;
+#endif
+#ifdef VEDIR_SHUNT
+  static unsigned long VED_Shnt_FrameSent = 0;
+  static char VED_SS_Labels[9][6] = {"PID", "V", "I", "P", "CE", "SOC", "TTG", "ALARM", "AR"};
+  static int VED_SS_ConnStat = 0;
+  static VED_Shunt_data VSS;
+#endif
 
   // Decode data from VE.Direct SoftwareSerial as often as possible
 #ifdef VEDIR_CHRG
@@ -117,8 +153,105 @@ void user_loop()
     {
       VED_Chrg1.rxData(VEDSer_Chrg1.read());
     }
+    VCHRG1.lastUpdate = UptimeSeconds;
     // grant time for background tasks
     delay(1);
+  }
+#endif
+#ifdef VEDIR_SHUNT
+  if (VEDSer_Shnt.available())
+  {
+    while (VEDSer_Shnt.available())
+    {
+      VED_Shnt.rxData(VEDSer_Shnt.read());
+    }
+    VSS.lastUpdate = UptimeSeconds;
+    // grant time for background tasks
+    delay(1);
+  }
+
+  // Verify data and store in struct
+  // Battery Voltage
+  if (VSS.iV == 255)
+  {
+    VSS.iV = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_V]);
+  }
+  if (VSS.iV != 255)
+  {
+    if ((atoi(VED_Shnt.veValue[VSS.iV]) > 10000) && (atoi(VED_Shnt.veValue[VSS.iV]) < 30000))
+    {
+      VSS.V = atof(VED_Shnt.veValue[VSS.iV]) / 1000;
+    }
+  }
+  // Battery Current
+  if (VSS.iI == 255)
+  {
+    VSS.iI = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_I]);
+  }
+  if (VSS.iI != 255)
+  {
+    if ((atoi(VED_Shnt.veValue[VSS.iI]) > -150000) && (atoi(VED_Shnt.veValue[VSS.iI]) < 150000))
+    {
+      VSS.I = atof(VED_Shnt.veValue[VSS.iI]) / 1000;
+    }
+  }
+  // Battery Power
+  if (VSS.iP == 255)
+  {
+    VSS.iP = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_P]);
+  }
+  if (VSS.iP != 255)
+  {
+    if ((atoi(VED_Shnt.veValue[VSS.iP]) > -2500) && (atoi(VED_Shnt.veValue[VSS.iP]) < 2500))
+    {
+      VSS.P = atoi(VED_Shnt.veValue[VSS.iP]);
+    }
+  }
+  // Consumed Energy
+  if (VSS.iCE == 255)
+  {
+    VSS.iCE = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_CE]);
+  }
+  if (VSS.iCE != 255)
+  {
+    if ((atoi(VED_Shnt.veValue[VSS.iCE]) >= -200000) && (atoi(VED_Shnt.veValue[VSS.iCE]) <= 0))
+    {
+      VSS.CE = atof(VED_Shnt.veValue[VSS.iCE]) / 1000;
+    }
+  }
+  // Battery SoC
+  if (VSS.iSOC == 255)
+  {
+    VSS.iSOC = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_SOC]);
+  }
+  if (VSS.iSOC != 255)
+  {
+    if ((atoi(VED_Shnt.veValue[VSS.iSOC]) >= 0) && (atoi(VED_Shnt.veValue[VSS.iSOC]) <= 1000))
+    {
+      VSS.SOC = atof(VED_Shnt.veValue[VSS.iSOC]) / 10;
+    }
+  }
+  // Battery TTG (time-to-empty)
+  if (VSS.iTTG == 255)
+  {
+    VSS.iTTG = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_TTG]);
+  }
+  if (VSS.iTTG != 255)
+  {
+    if ((atoi(VED_Shnt.veValue[VSS.iTTG]) >= -1) && (atoi(VED_Shnt.veValue[VSS.iTTG]) < 10000))
+    {
+      VSS.TTG = atoi(VED_Shnt.veValue[VSS.iTTG]);
+    }
+  }
+
+  // Get .veValue indexes for informational data (no data verification)
+  if (VSS.iALARM == 255)
+  {
+    VSS.iALARM = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_ALARM]);
+  }
+  if (VSS.iAR == 255)
+  {
+    VSS.iAR = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_AR]);
   }
 #endif
 
@@ -218,20 +351,91 @@ void user_loop()
     mqttClt.publish(t_C_Wh, String((Calc.Ws / 3600), 1).c_str(), true);
 
 #ifdef VEDIR_CHRG
-    if (VED_Chrg1.frameCounter > VED_Chrg1_FrameSent)
+    if ((UptimeSeconds - VCHRG1.lastUpdate) < VED_TIMEOUT)
     {
-      mqttClt.publish(t_VED_C1_PPV, String(VED_Chrg1.veValue[VCHRG_PPV]).c_str(), true);
-      mqttClt.publish(t_VED_C1_IB, String((atof(VED_Chrg1.veValue[VCHRG_IB]) / 1000), 2).c_str(), true);
-      mqttClt.publish(t_VED_C1_VB, String((atof(VED_Chrg1.veValue[VCHRG_VB]) / 1000), 2).c_str(), true);
-      mqttClt.publish(t_VED_C1_CS, String(VED_Chrg1.veValue[VCHRG_CS]).c_str(), true);
-      mqttClt.publish(t_VED_C1_ERR, String(VED_Chrg1.veValue[VCHRG_ERR]).c_str(), true);
-      mqttClt.publish(t_VED_C1_H20, String((atoi(VED_Chrg1.veValue[VCHRG_H20]) * 10)).c_str(), true);
-      VED_Chrg1_FrameSent = VED_Chrg1.frameCounter;
+      if (VCHRG1.lastUpdate >= VCHRG1.lastPublish)
+      {
+        // Decode most important CS values to text
+        switch (atoi(VED_Chrg1.veValue[VCHRG1.iCS]))
+        {
+        case 0 ... 5:
+          mqttClt.publish(t_VED_C1_CS, String(VED_CS_Decoder[atoi(VED_Chrg1.veValue[VCHRG1.iCS])]).c_str(), true);
+          break;
+        default:
+          mqttClt.publish(t_VED_C1_CS, String(VED_Chrg1.veValue[VCHRG1.iCS]).c_str(), true);
+          break;
+        }
+
+        // Decode most important ERR values to text
+        switch (atoi(VED_Chrg1.veValue[VCHRG1.iERR]))
+        {
+        case 0:
+          mqttClt.publish(t_VED_C1_ERR, String("Ok").c_str(), true);
+          break;
+        case 2:
+          mqttClt.publish(t_VED_C1_ERR, String("Vbat_HI").c_str(), true);
+          break;
+        case 17:
+          mqttClt.publish(t_VED_C1_ERR, String("Ch_Temp_HI").c_str(), true);
+          break;
+        case 18:
+          mqttClt.publish(t_VED_C1_ERR, String("Ch_I_HI").c_str(), true);
+          break;
+        default:
+          mqttClt.publish(t_VED_C1_CS, String(VED_Chrg1.veValue[VCHRG1.iERR]).c_str(), true);
+          break;
+        }
+
+        mqttClt.publish(t_VED_C1_PPV, String(VED_Chrg1.veValue[VCHRG1.iPPV]).c_str(), true);
+        mqttClt.publish(t_VED_C1_IB, String((atof(VED_Chrg1.veValue[VCHRG1.iIB]) / 1000), 2).c_str(), true);
+        mqttClt.publish(t_VED_C1_VB, String((atof(VED_Chrg1.veValue[VCHRG1.iVB]) / 1000), 2).c_str(), true);
+        mqttClt.publish(t_VED_C1_MPPT, String(VED_MPPT_Decoder[atoi(VED_Chrg1.veValue[VCHRG1.iMPPT])]).c_str(), true);
+        mqttClt.publish(t_VED_C1_H20, String((atoi(VED_Chrg1.veValue[VCHRG1.iH20]) * 10)).c_str(), true);
+        mqttClt.publish(t_VED_C1_CSTAT, String(VED_ConnStat_Decoder[VCHRG1.ConnStat]).c_str(), true);
+        // Data published, connection OK
+        VCHRG1.ConnStat = 1;
+        VCHRG1.lastPublish = UptimeSeconds;
+        delay(100);
+      }
     }
-#endif
+    else
+    {
+      // No data received within timeout period!
+      VCHRG1.ConnStat = 2;
+      mqttClt.publish(t_VED_C1_CSTAT, String(VED_ConnStat_Decoder[VCHRG1.ConnStat]).c_str(), true);
+    }
+
+#endif // VEDIR_CHRG
+
+#ifdef VEDIR_SHUNT
+    if ((UptimeSeconds - VSS.lastUpdate) < VED_TIMEOUT)
+    {
+      if (VSS.lastUpdate >= VSS.lastPublish)
+      {
+        mqttClt.publish(t_VED_SH_V, String(VSS.V, 2).c_str(), true);
+        mqttClt.publish(t_VED_SH_I, String(VSS.I, 2).c_str(), true);
+        mqttClt.publish(t_VED_SH_P, String(VSS.P).c_str(), true);
+        mqttClt.publish(t_VED_SH_CE, String(VSS.CE, 2).c_str(), true);
+        mqttClt.publish(t_VED_SH_SOC, String(VSS.SOC, 1).c_str(), true);
+        mqttClt.publish(t_VED_SH_TTG, String(VSS.TTG).c_str(), true);
+        mqttClt.publish(t_VED_SH_ALARM, String(VED_Shnt.veValue[VSS.iALARM]).c_str(), true);
+        mqttClt.publish(t_VED_SH_AR, String(VED_Shnt.veValue[VSS.iAR]).c_str(), true);
+        mqttClt.publish(t_VED_SH_CSTAT, String(VED_ConnStat_Decoder[VSS.ConnStat]).c_str(), true);
+        // Data published, connection OK
+        VSS.ConnStat = 1;
+        VSS.lastPublish = UptimeSeconds;
+      }
+    }
+    else
+    {
+      // No data received within timeout period!
+      VSS.ConnStat = 2;
+      mqttClt.publish(t_VED_SH_CSTAT, String(VED_ConnStat_Decoder[VSS.ConnStat]).c_str(), true);
+    }
+#endif // VEDIR_SHUNT
 
     // Add some more delay for WiFi processing
-    delay(200);
+    delay(100);
   }
 
   //
@@ -452,7 +656,7 @@ void user_loop()
         oled.set1X();
 #ifdef VEDIR_CHRG
         oled.println("VE.D_C1 FrCnt: " + String(VED_Chrg1.frameCounter));
-        oled.println("VE.D_C1 PPV: " + String(VED_Chrg1.veValue[VCHRG_PPV]));
+        oled.println("VE.D_C1 PPV: " + String(VED_Chrg1.veValue[VCHRG1.iPPV]));
 #else
         oled.println("Charge FET: " + String(Bool_Decoder[(int)bms.get.chargeFetState]));
         oled.println("Disch FET:  " + String(Bool_Decoder[(int)bms.get.disChargeFetState]));

@@ -17,7 +17,7 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 Keep in mind that you are working with potentially dangerous currents depending on the hardware you use. Take any precautions necessary!
 
 ## Status
-The code is finished so far, the last (self caused) problem with occasional ESP resets has been solved (hopefully). When i'm in the mood (and have enough spare time), I'll start adding a KiCAD project to the repo to combine all the hardware parts together.
+The code is finished so far, the last (self caused) problem with occasional ESP resets has been solved. When i'm in the mood (and have enough spare time), I'll start adding a KiCAD project to the repo to combine all the hardware parts together.
 
 ## Insights
 - Do not rely on the current reported by the Daly BMS, it is quite inaccurate at low levels. Even worse, **Daly does not recognize charge and discharge currents below 1.1A**, so at small setups like mine, this also means that you cannot rely on the SOC reported by Daly.
@@ -36,7 +36,7 @@ The code is finished so far, the last (self caused) problem with occasional ESP 
 - ~~It is probably a good idea if the ESP could communicate with the solar charger. For a future version, i would probably go for a [Victron charger with a VE.Direct interface](https://www.victronenergy.com/solar-charge-controllers/smartsolar-100-30-100-50) to be able to fetch the charging state. The currently used method by monitoring the voltage measured by the INA226 is a bit clumsy (especially with a cheap charger).~~ **Included** in version 1.2.0.
 - The next release (2.0) will probably include **major changes**, like:  
     - drop SOC calculation, read it from a Victron SmartShunt instead  
-    - remove support for the INA226, only use data from VE.direct (charger + shunt)  
+    - remove support for the INA226 (and display), only use data from VE.direct (charger + shunt)  
 
 ## What the code does
 Primarily, the code reads Battery-pack and cell status from the Daly BMS and sends it to your MQTT broker and to a locally attached OLED display at a configurable interval. It automatically switches the load-SSR on if the batteries are fully charged (2 configurable SOC limits) and off if the batteries are drained (also configureable SOC limit). Of course the Load-SSR can also be switched manually by setting the corresponding MQTT topic to `on` or `off`.  
@@ -44,7 +44,13 @@ As mentioned, the SOC reported by the Daly is incorrect, especially when chargin
 You may manually switch Daly Charge and Discharge FETs on/off through dedicated MQTT topics to `on` or `off`, but be warned that this might confuse your charger, i think due to the Low-side switching nature of the Daly BMS. The code is not automatically handling the Daly FETs, however when monitoring the MQTT topics you will discover, that the BMS itself enables/disables the FETs on demand (in example, battery full -> Charge FET disabled).    
 Last but not least, the firmware (starting with v1.1.0) also allows you to handle an external active balancer through an additional SSR as recommended by [Andy](https://www.youtube.com/watch?v=yPmwrPOwC3g). However, i have added a second condition beside the 3.4V cell voltage: **we're only enabling the active balancer at a configurable mimimum solar power threshold**. This ensures that balancing only kicks in when the battery is reasonably charging (i have set it to 10W for my small setup).  
 To configure the firmware for your needs, see files `user_setup.h` and `mqtt_ota_config.h`, also see [PlatformIO ESP32 Template](https://github.com/juepi/PIO-ESP32-Template) readme (WiFi setup etc.).  
-As of **version 1.2.0**, the ability to read data from a **Victron SmartSolar 75/15** through a SoftwareSerial port has been added. This feature can be enabled through a define parameter in the `platformio.ini`. If you want to use a different charger, you may want to take a look at the VE.Direct related settings in the `user_setup.h` file.
+As of **version 1.2.0**, the ability to read data from a **Victron SmartSolar 75/15** through a SoftwareSerial port has been added. This feature can be enabled through a define parameter in the `platformio.ini`. If you want to use a different charger, you may want to take a look at the VE.Direct related settings in the `user_setup.h` file.  
+**Version 1.3.0** now also supports reading data from a **Victron SmartShunt** through an addition SoftwareSerial port.
+
+# Bugs
+- Both data frame arrays of the VeDirectFrameHandler (Charger and SmartShunt) keep increasing over time due to transmission/decoding errors (I assume!) leading to new (wrong) data labels that are added to the array. VeDirectFrameHandler maxes out at 40 Labels, so this should not lead to any problems (in terms of buffer overflo), not sure how this is possible however as every frame has a checksum. Due to this problem, i assume  that also garbage values may be encountered, so I've added additional validity checks for the important data.
+- VeDirectFrameHandler data from the SmartShunt is "sorted" randomly in the veValue/veName arrays, which breaks the "hardcoded" index numbers I used to get the values from the data arrays. I've fixed this by adding a function to the library that allows you to fetch the arrays index number from a given veName tag.
+
 
 # Version History
 
@@ -89,3 +95,11 @@ As of **version 1.2.0**, the ability to read data from a **Victron SmartSolar 75
 
 ## v1.2.1
 - Undone changes `WiFiClient.flush()` and set `WiFiClient.setNoDelay(true)` as this caused massive delays for receiving MQTT topics
+
+## v1.3.0
+- Some minor updates on published VE.Direct charger data
+- Added Victron SmartShunt support (enable in `platformio.ini`)
+- Added function to VeDirectFrameHandler which looks up array index numbers by Name label (required for SmartShunt!)
+- Added connection timeout / verification for VE.Direct devices
+- Added data plausibility checks for SmartShunt
+- Note: this is the final v1 release!

@@ -37,6 +37,10 @@ extern INA226 ina;
 extern SoftwareSerial VEDSer_Chrg1;
 extern VeDirectFrameHandler VED_Chrg1;
 #endif // VEDIR_CHRG
+#ifdef VEDIR_SHUNT
+extern SoftwareSerial VEDSer_Shnt;
+extern VeDirectFrameHandler VED_Shnt;
+#endif // VEDIR_SHUNT
 
 //
 // Global user vars
@@ -92,7 +96,7 @@ extern bool Ctrl_SSR2; // SSR2 switch state (on/off)
 //
 #define BAT_DESIGN_CAP 85        // rough Wh (Watt hours) of the connected battery; just a starting value, will be updated during charge/discharge cycles
 #define BAT_FULL_V 14.35f        // Full charge voltage (measured by INA226); this is the peak voltage at which your solar charger cuts off charging
-#define BAT_EMPTY_V 12.15f       // Battery empty voltage; CSOC will be set to 0, load will be disabled (NOTE: may be set lower! quite high due to my special setup!)
+#define BAT_EMPTY_V 12.3f        // Battery empty voltage; CSOC will be set to 0, load will be disabled (NOTE: may be set lower! quite high due to my special setup!)
 #define BAT_NEARLY_EMPTY_V 13.0f // Battery nearly drained; if INA226 voltage is below that threshold *at firmware boot*, CSOC will be set to 0%
 
 //
@@ -115,28 +119,63 @@ extern bool Ctrl_SSR2; // SSR2 switch state (on/off)
 // Victron VE.Direct settings
 //
 // Global Settings
-#define VED_BAUD 19200 // Baud rate (used for all VE.Direct devices)
+#define VED_BAUD 19200  // Baud rate (used for all VE.Direct devices)
+#define VED_TIMEOUT 180 // If no data update occurs within this timespan (seconds), connection to VE.Direct device is considered dead
 
 // SmartSolar 75/15 Charger settings (charger #1)
 #ifdef VEDIR_CHRG       // Enabled in platformio.ini?
 #define VED_CHRG1_RX 33 // RX for SoftwareSerial
 #define VED_CHRG1_TX 21 // TX for SoftwareSerial (unused)
-// Array elements of VED_Chrg1.veValue which will be sent to the MQTT broker (ATTN: valid for SmartSolar 75/15 with firmware 1.61)
+// Array element indexes of VED_Chrg1.veValue which will be sent to the MQTT broker (ATTN: valid for SmartSolar 75/15 with firmware 1.61)
 // See Victron Documentation: https://www.victronenergy.com/support-and-downloads/technical-information# --> VE.Direct protocol
-#define VCHRG_PPV 6  // present PV Power
-#define VCHRG_IB 4   // charging current
-#define VCHRG_VB 3   // battery voltage
-#define VCHRG_CS 7   // charger state
-#define VCHRG_ERR 10 // error state
-#define VCHRG_H20 14 // yield today (in 10Wh increments)
+#define i_CHRG_LBL_VB 3   // battery voltage
+#define i_CHRG_LBL_IB 4   // charging current
+#define i_CHRG_LBL_PPV 6  // present PV Power
+#define i_CHRG_LBL_CS 7   // charger state
+#define i_CHRG_LBL_MPPT 8 // MPPT state
+#define i_CHRG_LBL_ERR 10 // error state
+#define i_CHRG_LBL_H20 14 // yield today (in 10Wh increments)
 // MQTT Topics for published data
 #define t_VED_C1_PPV TOPTREE "VC1_PPV"
 #define t_VED_C1_IB TOPTREE "VC1_IB"
 #define t_VED_C1_VB TOPTREE "VC1_VB"
 #define t_VED_C1_ERR TOPTREE "VC1_ERR"
 #define t_VED_C1_CS TOPTREE "VC1_CS"
+#define t_VED_C1_MPPT TOPTREE "VC1_MPPT"
 #define t_VED_C1_H20 TOPTREE "VC1_H20"
+#define t_VED_C1_CSTAT TOPTREE "VC1_CSTAT"
 #endif // VEDIR_CHRG
+
+// SmartShunt 500 settings
+#ifdef VEDIR_SHUNT     // Enabled in platformio.ini?
+#define VED_SHNT_RX 35 // RX for SoftwareSerial
+#define VED_SHNT_TX 34 // TX for SoftwareSerial (unused)
+// Array element indexes of VED_Shnt.veValue which will be sent to the MQTT broker (ATTN: valid for SmartShunt 500 with firmware 4.12)
+// See Victron Documentation: https://www.victronenergy.com/support-and-downloads/technical-information# --> VE.Direct protocol
+// ATTN: This DOES NOT WORK with the SmartShunt! The data in .veName and .veValue arrays are in different order nearly every ESP boot
+// the following defines refer to the elements in the VED_SS_Labels array, which is used to get the corresponding indexes from .veName
+#define i_SS_LBL_PID 0   // Device PID
+#define i_SS_LBL_V 1     // battery voltage [mV]
+#define i_SS_LBL_I 2     // battery current [mA]
+#define i_SS_LBL_P 3     // instantaneous power [W]
+#define i_SS_LBL_CE 4    // consumed Ah [mAh]
+#define i_SS_LBL_SOC 5   // battery SOC [‰]
+#define i_SS_LBL_TTG 6   // time to empty [min] (-1 if not dicharging)
+#define i_SS_LBL_ALARM 7 // Alarm active flag (ON/OFF)
+#define i_SS_LBL_AR 8    // Alarm Reason
+
+// MQTT Topics for published data
+#define t_VED_SH_V TOPTREE "VSS_V"
+#define t_VED_SH_I TOPTREE "VSS_I"
+#define t_VED_SH_P TOPTREE "VSS_P"
+#define t_VED_SH_CE TOPTREE "VSS_CE"
+#define t_VED_SH_SOC TOPTREE "VSS_SOC"
+#define t_VED_SH_TTG TOPTREE "VSS_TTG"
+#define t_VED_SH_ALARM TOPTREE "VSS_ALARM"
+#define t_VED_SH_AR TOPTREE "VSS_AR"
+#define t_VED_SH_CSTAT TOPTREE "VSS_CSTAT" // SmartShunt connection status
+
+#endif // VEDIR_SHUNT
 
 //
 // MQTT Data update interval
@@ -192,6 +231,41 @@ struct Calculations
     float P_Avg_1h = 0;                   // 1h power average (updated every 6 minutes)
     float P_Avg_Arr[10] = {0};            // helpers for power average calculation
     float P_Avg_Prev_Ws = 0;
+};
+
+struct VED_Shunt_data
+{
+    float V = 0; // useful data copied from VE.Direct frame
+    float I = 0;
+    int P = 0;
+    float CE = 0;
+    float SOC = 0;
+    int TTG = 0;
+    int iV = 255; // All i* vars point to the index of the corresponding values in VEdirectFrameHandler .veValue array
+    int iI = 255;
+    int iP = 255;
+    int iCE = 255;
+    int iSOC = 255;
+    int iTTG = 255;
+    int iALARM = 255;
+    int iAR = 255;
+    unsigned long lastUpdate = 0;  // to verify connection is active
+    unsigned long lastPublish = 0; // and data needs to be published
+    int ConnStat = 0;              // Connection Status
+};
+
+struct VED_Charger_data
+{
+    int iVB = i_CHRG_LBL_VB; // All i* vars point to the index of the corresponding values in VEdirectFrameHandler .veValue array
+    int iIB = i_CHRG_LBL_IB; // for the charger, the data order is always the same, so static values can be used here from defines above
+    int iPPV = i_CHRG_LBL_PPV;
+    int iCS = i_CHRG_LBL_CS;
+    int iMPPT = i_CHRG_LBL_MPPT;
+    int iERR = i_CHRG_LBL_ERR;
+    int iH20 = i_CHRG_LBL_H20;
+    unsigned long lastUpdate = 0;  // to verify connection is active
+    unsigned long lastPublish = 0; // and data needs to be published
+    int ConnStat = 0;              // Connection Status
 };
 
 #endif // USER_SETUP_H
