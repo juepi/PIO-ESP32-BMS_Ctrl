@@ -11,15 +11,9 @@
 // Define required user libraries here
 // Don't forget to add them into platformio.ini or the /lib directory
 //
-#include <Wire.h>
-#include <SSD1306Ascii.h>
-#include <SSD1306AsciiWire.h>
 #include <daly-bms-uart.h>
-#include <INA226.h>
-#ifdef VEDIR_CHRG
 #include <VeDirectFrameHandler.h>
 #include <SoftwareSerial.h>
-#endif // VEDIR_CHRG
 
 //
 // Declare user_setup, user_loop and custom global functions
@@ -30,39 +24,20 @@ extern void user_loop();
 //
 // Declare global user specific objects
 //
-extern SSD1306AsciiWire oled;
 extern Daly_BMS_UART bms;
-extern INA226 ina;
-#ifdef VEDIR_CHRG
 extern SoftwareSerial VEDSer_Chrg1;
 extern VeDirectFrameHandler VED_Chrg1;
-#endif // VEDIR_CHRG
-#ifdef VEDIR_SHUNT
 extern SoftwareSerial VEDSer_Shnt;
 extern VeDirectFrameHandler VED_Shnt;
-#endif // VEDIR_SHUNT
 
 //
 // Global user vars
 //
-extern bool INA_avail; // INA226 successfully initialized?
 // Set by MQTT topics
-extern int Ctrl_CSw;   // Desired Daly MOSFET switch states, either on, off or dnc (do not change)
-extern int Ctrl_LSw;   // if set to on/off, will be set ONCE by the ESP, then reset to dnc
-extern bool Ctrl_SSR1; // SSR1 switch state (on/off)
-extern bool Ctrl_SSR2; // SSR2 switch state (on/off)
-
-//
-// I2C settings
-//
-// Pins
-#define I2C_SCL 39
-#define I2C_SDA 37
-
-//
-// User Button (uses internal Pulldown)
-//
-#define BUT1 7 // Pull to 3V3 to enable display
+extern int Ctrl_DalyChSw;   // Desired Daly MOSFET switch states, either on, off or dnc (do not change)
+extern int Ctrl_DalyLoadSw; // if set to on/off, will be set ONCE by the ESP, then reset to dnc
+extern int Ctrl_SSR1;       // SSR1 switch state (on/off/dnc)
+extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
 
 //
 // User SSR
@@ -72,48 +47,29 @@ extern bool Ctrl_SSR2; // SSR2 switch state (on/off)
 #define SSR2 3 // Active Balancer Enable
 
 //
-// UART Connection to Daly BMS
+// Daly BMS Settings
+//
+// UART
 // (defaults to GPIO17 for TXD and GPIO18 for RXD on ESP32-S2)
-//
 #define DALY_UART Serial1
-
-//
-// OLED settings
-//
-#define OLED_ADDRESS 0x3C
-#define DISPLAY_REFRESH_INTERVAL 5 // Switch displayed DataSets every x seconds
-
-//
-// INA226 wattmeter settings
-//
-#define INA_ADDRESS 0x40
-#define INA_SHUNT 0.002 // 2mOhm shunt (INA configuration setting)
-#define INA_MAX_I 5     // max. expected current 5A (INA configuration setting)
-#define INA_MIN_I 0.005 // measured currents below +/-5mA will be discarded
-
-//
-// Battery settings
-//
-#define BAT_DESIGN_CAP 85        // rough Wh (Watt hours) of the connected battery; just a starting value, will be updated during charge/discharge cycles
-#define BAT_FULL_V 14.35f        // Full charge voltage (measured by INA226); this is the peak voltage at which your solar charger cuts off charging
-#define BAT_EMPTY_V 12.3f        // Battery empty voltage; CSOC will be set to 0, load will be disabled (NOTE: may be set lower! quite high due to my special setup!)
-#define BAT_NEARLY_EMPTY_V 13.0f // Battery nearly drained; if INA226 voltage is below that threshold *at firmware boot*, CSOC will be set to 0%
+// Data readout interval in seconds
+#define DALY_UPDATE_INTERVAL 5
 
 //
 // Load settings (SSR1)
 //
-#define ENABLE_LOAD_CSOC 95     // calculated SOC at which to enable the load (SSR1)
-#define DISABLE_LOAD_CSOC 0     // CSOC at which load will be disconnected
-#define HIGH_PV_AVG_PWR 30      // If the average charging power is higher than this..
-#define HIGH_PV_EN_LOAD_CSOC 80 //.. enable the load at an earlier SOC to avoid wasting PV energy
+#define ENABLE_LOAD_SOC 90     // SOC at which to enable the load (SSR1)
+#define DISABLE_LOAD_SOC 5     // SOC at which load will be disconnected
+#define HIGH_PV_AVG_PWR 30     // If the average charging power is higher than this..
+#define HIGH_PV_EN_LOAD_SOC 70 //.. enable the load at an earlier SOC to avoid wasting PV energy
 
 //
 // Active Balancer Settings (SSR2)
 //
 #define BAL_ON_CELLV 3400    // ENABLE balancer if a cell has reached this voltage level [mV]
-#define BAL_ON_MIN_PWRAVG 10 // AND the minimum power average of the last hour is +10W (-> battery charging)
+#define BAL_ON_MIN_PWRAVG 10 // AND the minimum PV power average of the last hour is higher than 10W
 #define BAL_OFF_CELLV 3300   // DISABLE balancer if a cell has fallen below this voltage level [mV]
-#define BAL_MIN_ON_DUR 1800  // Minimum duration to keep balancer enabled [s]
+#define BAL_MIN_ON_DUR 3600  // Minimum duration to keep balancer enabled [s]
 
 //
 // Victron VE.Direct settings
@@ -123,7 +79,6 @@ extern bool Ctrl_SSR2; // SSR2 switch state (on/off)
 #define VED_TIMEOUT 180 // If no data update occurs within this timespan (seconds), connection to VE.Direct device is considered dead
 
 // SmartSolar 75/15 Charger settings (charger #1)
-#ifdef VEDIR_CHRG       // Enabled in platformio.ini?
 #define VED_CHRG1_RX 33 // RX for SoftwareSerial
 #define VED_CHRG1_TX 21 // TX for SoftwareSerial (unused)
 // Array element indexes of VED_Chrg1.veValue which will be sent to the MQTT broker (ATTN: valid for SmartSolar 75/15 with firmware 1.61)
@@ -144,10 +99,9 @@ extern bool Ctrl_SSR2; // SSR2 switch state (on/off)
 #define t_VED_C1_MPPT TOPTREE "VC1_MPPT"
 #define t_VED_C1_H20 TOPTREE "VC1_H20"
 #define t_VED_C1_CSTAT TOPTREE "VC1_CSTAT"
-#endif // VEDIR_CHRG
+#define t_VED_C1_AvgPPV TOPTREE "VC1_AvgPPV" // Calculated 1hr PV power average
 
 // SmartShunt 500 settings
-#ifdef VEDIR_SHUNT     // Enabled in platformio.ini?
 #define VED_SHNT_RX 35 // RX for SoftwareSerial
 #define VED_SHNT_TX 34 // TX for SoftwareSerial (unused)
 // Array element indexes of VED_Shnt.veValue which will be sent to the MQTT broker (ATTN: valid for SmartShunt 500 with firmware 4.12)
@@ -175,8 +129,6 @@ extern bool Ctrl_SSR2; // SSR2 switch state (on/off)
 #define t_VED_SH_AR TOPTREE "VSS_AR"
 #define t_VED_SH_CSTAT TOPTREE "VSS_CSTAT" // SmartShunt connection status
 
-#endif // VEDIR_SHUNT
-
 //
 // MQTT Data update interval
 //
@@ -186,53 +138,27 @@ extern bool Ctrl_SSR2; // SSR2 switch state (on/off)
 // MQTT Topics for BMS, Load and Balancer Controlling and Monitoring
 //
 // Publish only
-#define t_DSOC TOPTREE "Daly_SOC"          // BMS Battery State of Charge(useless, see current)
-#define t_DV TOPTREE "Daly_V"              // BMS Battery Voltage
-#define t_DdV TOPTREE "Daly_dV"            // BMS Voltage diff between highest and lowest cell voltage
-#define t_DI TOPTREE "Daly_I"              // BMS Battery Current(useless, only shows currents > 1.1A!)
-#define t_DV_C1 TOPTREE "Daly_C1V"         // Cell 1 voltage
-#define t_DV_C2 TOPTREE "Daly_C2V"         // Cell 2 voltage
-#define t_DV_C3 TOPTREE "Daly_C3V"         // Cell 3 voltage
-#define t_DV_C4 TOPTREE "Daly_C4V"         // Cell 4 voltage
-#define t_DLSw TOPTREE "Daly_LSw"          // Actual "switch state" for load MOSFETs (0/1)
-#define t_DCSw TOPTREE "Daly_CSw"          // Actual "switch state" for charging MOSFETs (0/1)
-#define t_DTemp TOPTREE "Daly_Temp"        // Temperature sensor of the BMS
-#define t_IV TOPTREE "INA_V"               // Battery voltage reported by INA
-#define t_II TOPTREE "INA_I"               // Battery current reported by INA
-#define t_IP TOPTREE "INA_P"               // Power reported by INA
-#define t_C_Wh TOPTREE "Calc_Wh"           // Currently calculated energy stored in the battery
-#define t_C_MaxWh TOPTREE "Calc_maxWh"     // Calculated battery capacity
-#define t_C_SOC TOPTREE "Calc_SOC"         // Calculated SOC based on INA data ("relative state of charge")
-#define t_Ctrl_StatT TOPTREE "CtrlStatTXT" // ESP Controller status text and last reset reason provided through MQTT (basically to check if UART to Daly BMS is OK)
-#define t_Ctrl_StatU TOPTREE "CtrlStatUpt" // ESP Controller uptime provided through MQTT
-#define t_C_AvgP TOPTREE "Calc_AvgP"       // Calculated 1hr power average
+#define t_DSOC TOPTREE "Daly_SOC"             // BMS Battery State of Charge(useless, see current)
+#define t_DV TOPTREE "Daly_V"                 // BMS Battery Voltage
+#define t_DdV TOPTREE "Daly_dV"               // BMS Voltage diff between highest and lowest cell voltage
+#define t_DI TOPTREE "Daly_I"                 // BMS Battery Current(useless, only shows currents > 1.1A!)
+#define t_DV_C_Templ TOPTREE "Daly_C"         // Cell Voltage template; adding cell number + "V" at the end (transmitted cell number starts with 1)
+#define t_DLSw TOPTREE "Daly_LSw"             // Actual "switch state" for load MOSFETs (0/1)
+#define t_DCSw TOPTREE "Daly_CSw"             // Actual "switch state" for charging MOSFETs (0/1)
+#define t_DTemp TOPTREE "Daly_Temp"           // Temperature sensor of the BMS
+#define t_Ctrl_StatT TOPTREE "CtrlStatTXT"    // ESP Controller status text provided through MQTT (basically to check if UART to Daly BMS is OK)
+#define t_Ctrl_StatU TOPTREE "CtrlStatUpt"    // ESP Controller uptime provided through MQTT
+#define t_Ctrl_actSSR1 TOPTREE "Ctrl_actSSR1" // Actual state of SSR1 GPIO (on/off)
+#define t_Ctrl_actSSR2 TOPTREE "Ctrl_actSSR2" // Actual state of SSR2 GPIO (on/off)
 // Subscriptions
 #define t_Ctrl_CSw TOPTREE "Ctrl_CSw"   // User-desired state of Daly charging MOSFETs (on/off or dnc for "do not change")
 #define t_Ctrl_LSw TOPTREE "Ctrl_LSw"   // User-desired state of Daly discharging MOSFETs (on/off or dnc)
-#define t_Ctrl_SSR1 TOPTREE "Ctrl_SSR1" // User-desired state of SSR1 GPIO (on/off)
-#define t_Ctrl_SSR2 TOPTREE "Ctrl_SSR2" // User-desired state of SSR2 GPIO (on/off)
+#define t_Ctrl_SSR1 TOPTREE "Ctrl_SSR1" // User-desired state of SSR1 GPIO (on/off/dnc)
+#define t_Ctrl_SSR2 TOPTREE "Ctrl_SSR2" // User-desired state of SSR2 GPIO (on/off/dnc)
 
 //
 // Data structures
 //
-struct INA226_Raw
-{
-    float V = 0;
-    float I = 0;
-    // float P; not usable, reports only positive values
-};
-
-struct Calculations
-{
-    float SOC = 100;                      // Calculated SOC (relative SOC) - assume a fully charged battery at firmware start
-    float Ws = BAT_DESIGN_CAP * 3600;     // usable Energy stored in battery (counting energy when battery voltage is between BAT_EMPTY_V and BAT_FULL_V)
-    float max_Ws = BAT_DESIGN_CAP * 3600; // initial battery design capacity (updated after every charge cycle)
-    float P = 0;                          // currently measures power (updated every second)
-    float P_Avg_1h = 0;                   // 1h power average (updated every 6 minutes)
-    float P_Avg_Arr[10] = {0};            // helpers for power average calculation
-    float P_Avg_Prev_Ws = 0;
-};
-
 struct VED_Shunt_data
 {
     float V = 0; // useful data copied from VE.Direct frame
@@ -242,20 +168,24 @@ struct VED_Shunt_data
     float SOC = 0;
     int TTG = 0;
     int iV = 255; // All i* vars point to the index of the corresponding values in VEdirectFrameHandler .veValue array
-    int iI = 255;
+    int iI = 255; // will be updated to valid values by the getIndexByName function at runtime
     int iP = 255;
     int iCE = 255;
     int iSOC = 255;
     int iTTG = 255;
     int iALARM = 255;
     int iAR = 255;
-    unsigned long lastUpdate = 0;  // to verify connection is active
-    unsigned long lastPublish = 0; // and data needs to be published
-    int ConnStat = 0;              // Connection Status
+    uint32_t lastUpdate = 0;  // to verify connection is active
+    uint32_t lastValidFr = 0; // last valid frame decoded
+    uint32_t lastPublish = 0; // and data needs to be published
+    int ConnStat = 0;         // Connection Status
 };
 
 struct VED_Charger_data
 {
+    int PPV = 0;
+    float Avg_PPV = 0; // 1h average PV power
+    int Avg_PPV_Arr[10] = {0};
     int iVB = i_CHRG_LBL_VB; // All i* vars point to the index of the corresponding values in VEdirectFrameHandler .veValue array
     int iIB = i_CHRG_LBL_IB; // for the charger, the data order is always the same, so static values can be used here from defines above
     int iPPV = i_CHRG_LBL_PPV;
@@ -263,9 +193,10 @@ struct VED_Charger_data
     int iMPPT = i_CHRG_LBL_MPPT;
     int iERR = i_CHRG_LBL_ERR;
     int iH20 = i_CHRG_LBL_H20;
-    unsigned long lastUpdate = 0;  // to verify connection is active
-    unsigned long lastPublish = 0; // and data needs to be published
-    int ConnStat = 0;              // Connection Status
+    uint32_t lastUpdate = 0;  // to verify connection is active
+    uint32_t lastValidFr = 0; // last valid frame decoded
+    uint32_t lastPublish = 0; // and data needs to be published
+    int ConnStat = 0;         // Connection Status
 };
 
 #endif // USER_SETUP_H

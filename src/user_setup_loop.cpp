@@ -7,32 +7,21 @@
  */
 #include "setup.h"
 
-// Setup OLED instance
-SSD1306AsciiWire oled;
-
 // Setup Daly BMS connector instance
 Daly_BMS_UART bms(DALY_UART);
 
 // Setup VE.Direct
-#ifdef VEDIR_CHRG
 SoftwareSerial VEDSer_Chrg1;
 VeDirectFrameHandler VED_Chrg1;
-#endif
-#ifdef VEDIR_SHUNT
 SoftwareSerial VEDSer_Shnt;
 VeDirectFrameHandler VED_Shnt;
-#endif
-
-// Setup INA226 wattmeter instance (highly recommended! Daly far too imprecise!)
-INA226 ina(Wire);
 
 // Global variable declarations
-bool INA_avail = false;
 // for MQTT topics
-int Ctrl_CSw = 2;
-int Ctrl_LSw = 2;
-bool Ctrl_SSR1 = false;
-bool Ctrl_SSR2 = false;
+int Ctrl_DalyChSw = 2;
+int Ctrl_DalyLoadSw = 2;
+int Ctrl_SSR1 = 2;
+int Ctrl_SSR2 = 2;
 
 /*
  * User Setup Function
@@ -40,18 +29,12 @@ bool Ctrl_SSR2 = false;
  */
 void user_setup()
 {
-  Wire.begin(I2C_SDA, I2C_SCL);
-  pinMode(BUT1, INPUT_PULLDOWN);
   pinMode(SSR1, OUTPUT);
   pinMode(SSR2, OUTPUT);
   digitalWrite(SSR1, LOW);
   digitalWrite(SSR2, LOW);
-  oled.begin(&Adafruit128x32, OLED_ADDRESS);
-  oled.setFont(Adafruit5x7);
-  oled.clear();
   bms.Init();
 
-#ifdef VEDIR_CHRG
   VEDSer_Chrg1.begin(VED_BAUD, SWSERIAL_8N1, VED_CHRG1_RX, VED_CHRG1_TX, false, 512);
   if (!VEDSer_Chrg1)
   {
@@ -68,9 +51,7 @@ void user_setup()
   // We don't need TX
   VEDSer_Chrg1.enableIntTx(false);
   VEDSer_Chrg1.flush();
-#endif
 
-#ifdef VEDIR_SHUNT
   VEDSer_Shnt.begin(VED_BAUD, SWSERIAL_8N1, VED_SHNT_RX, VED_SHNT_TX, false, 512);
   if (!VEDSer_Shnt)
   {
@@ -87,20 +68,6 @@ void user_setup()
   // We don't need TX
   VEDSer_Shnt.enableIntTx(false);
   VEDSer_Shnt.flush();
-#endif
-
-  INA_avail = ina.begin(INA_ADDRESS);
-  if (INA_avail)
-  {
-    // Continuously measure and average measurements for a timespan of ~ 0.5sec
-    ina.configure(INA226_AVERAGES_64, INA226_BUS_CONV_TIME_8244US, INA226_SHUNT_CONV_TIME_8244US, INA226_MODE_SHUNT_BUS_CONT);
-    ina.calibrate(INA_SHUNT, INA_MAX_I);
-    DEBUG_PRINTLN("INA226 initialized.");
-  }
-  else
-  {
-    DEBUG_PRINTLN("Failed to initialize INA226!");
-  }
 }
 
 /*
@@ -112,60 +79,88 @@ void user_loop()
   //
   // Declare Vars
   //
+  static bool FirstLoop = true; // Firmware startup
+  // Daly BMS
   static bool BMSresponding = false;
-  static bool EnableDisplay = false;
-  static bool FirstLoop = true;
-  // Power Calculations / Readings
-  static INA226_Raw INADAT;
-  static Calculations Calc;
-  // Other helpers
-  static uint32_t LastDisplayChange = 0;
-  static uint32_t LastDataUpdate = 0;
-  static int NextDataSet = 0;
+  static uint32_t BMSLastDataUpdate = 0;
+  // Uptime calculation
   static uint32_t UptimeSeconds = 0;
   static unsigned long oldMillis = 0;
-  static const char *Stat_Decoder[] = {"FAIL", "OK"};
-  static const char *Bool_Decoder[] = {"off", "on"};
-  static bool OledCleared = false;
+  // Load
+  static bool Ctrl_SSR1_autoSetState = false; // desired state of automatic mode
+  static bool Ctrl_SSR1_actState = false;     // currently active state set on GPIO
+  // Balancer
   static uint32_t LastBalancerEnable = 0;
-  static short UpdAvgArrIndx = 0;
-  static uint32_t LastAvgCalc = 0;
-#ifdef VEDIR_CHRG
-  static unsigned long VED_Chrg1_FrameSent = 0;
+  static bool Ctrl_SSR2_autoSetState = false; // desired state of automatic mode
+  static bool Ctrl_SSR2_actState = false;     // currently active state set on GPIO
+  // Other helpers
+  static uint32_t MQTTLastDataPublish = 0;
+  static const char *Bool_Decoder[] = {"off", "on"};
+  // VE.Direct Global
+  static const char *VED_ConnStat_Decoder[] = {"Startup", "Ok", "Timeout"};
+  // VE.Direct Charger
   // Int to Text conversion for Charger data
+  static short UpdAvgArrIndx = 0; // 1hr average PPV calculation
+  static uint32_t LastAvgCalc = 0;
   static const char *VED_MPPT_Decoder[] = {"Off", "V_I_Lim", "Active"};
   static const char *VED_CS_Decoder[] = {"Off", "na", "Fault", "Bulk", "Absorption", "Float"};
-  static const char *VED_ConnStat_Decoder[] = {"Startup", "Ok", "Timeout"};
   static VED_Charger_data VCHRG1;
-#endif
-#ifdef VEDIR_SHUNT
-  static unsigned long VED_Shnt_FrameSent = 0;
+  // VE.Direct SmartShunt
   static char VED_SS_Labels[9][6] = {"PID", "V", "I", "P", "CE", "SOC", "TTG", "ALARM", "AR"};
-  static int VED_SS_ConnStat = 0;
   static VED_Shunt_data VSS;
-#endif
 
-  // Decode data from VE.Direct SoftwareSerial as often as possible
-#ifdef VEDIR_CHRG
+  //
+  // Start the action
+  //
+  // on boot, wait a seconds to ensure we have received data from the VE.Direct devices
+  if (FirstLoop)
+  {
+    delay(1000);
+  }
+
+  //
+  // Increase Uptime counter
+  //
+  if ((millis() - oldMillis) >= 1000)
+  {
+    oldMillis = millis();
+    UptimeSeconds++;
+  }
+
+  //
+  // Decode available data from VE.Direct SoftwareSerials immediately
+  //
   if (VEDSer_Chrg1.available())
   {
     while (VEDSer_Chrg1.available())
     {
       VED_Chrg1.rxData(VEDSer_Chrg1.read());
     }
-    VCHRG1.lastUpdate = UptimeSeconds;
+    if (VCHRG1.lastValidFr < VED_Chrg1.frameCounter)
+    {
+      // new valid frame decoded from VeDirectFrameHandler
+      VCHRG1.lastUpdate = UptimeSeconds;
+      VCHRG1.lastValidFr = VED_Chrg1.frameCounter;
+    }
     // grant time for background tasks
     delay(1);
+
+    // Store data in struct (only PPV needed here, anything else will just be copied out to MQTT topics)
+    VCHRG1.PPV = atoi(VED_Chrg1.veValue[VCHRG1.iPPV]);
   }
-#endif
-#ifdef VEDIR_SHUNT
+
   if (VEDSer_Shnt.available())
   {
     while (VEDSer_Shnt.available())
     {
       VED_Shnt.rxData(VEDSer_Shnt.read());
     }
-    VSS.lastUpdate = UptimeSeconds;
+    if (VSS.lastValidFr < VED_Shnt.frameCounter)
+    {
+      // new valid frame decoded from VeDirectFrameHandler
+      VSS.lastUpdate = UptimeSeconds;
+      VSS.lastValidFr = VED_Shnt.frameCounter;
+    }
     // grant time for background tasks
     delay(1);
   }
@@ -253,82 +248,70 @@ void user_loop()
   {
     VSS.iAR = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_AR]);
   }
-#endif
 
   //
-  // Gather data every second
+  // Gather data from Daly BMS
   //
-  if ((millis() - oldMillis) >= 1000 || FirstLoop)
+  if ((UptimeSeconds - BMSLastDataUpdate) >= DALY_UPDATE_INTERVAL || FirstLoop)
   {
-    oldMillis = millis();
-    UptimeSeconds++;
-
-    // Update data from BMS
+    // Fetch data from BMS
     // ATTN: takes between 640 and 710ms!
     BMSresponding = bms.update();
+    BMSLastDataUpdate = UptimeSeconds;
+  }
 
-    // Get data from INA226
-    INADAT.V = ina.readBusVoltage();
-    INADAT.I = ina.readShuntCurrent();
-    // ATTN: ina.readBusPower() always reports positive values - not usable for our purpose!
-    if (abs(INADAT.I) >= INA_MIN_I)
-    {
-      // Calculations
-      Calc.P = INADAT.V * INADAT.I;
-      Calc.Ws = Calc.Ws + Calc.P;
-      if (Calc.Ws > Calc.max_Ws)
+  //
+  // Update 1hr power average every 6 minutes
+  //
+  if ((UptimeSeconds - LastAvgCalc) >= 360 || FirstLoop)
+  {
+    // Fill array with current power value if we've just booted
+    if (FirstLoop)
+      for (int i = 0; i < 10; i++)
       {
-        // We've got a new max. Ws value for the battery, remember it
-        Calc.max_Ws = Calc.Ws;
+        VCHRG1.Avg_PPV_Arr[i] = VCHRG1.PPV;
       }
-      else if (Calc.Ws < 0)
-      {
-        // Energy stored in the battery can never be less than 0
-        // this might happen when ESP is flashed while discharging
-        Calc.Ws = 0;
-      }
-      Calc.SOC = (Calc.Ws / Calc.max_Ws) * 100;
-    }
-    else
+    LastAvgCalc = UptimeSeconds;
+    // Update array element with current PV power
+    VCHRG1.Avg_PPV_Arr[UpdAvgArrIndx] = VCHRG1.PPV;
+    // rotate to next array element
+    UpdAvgArrIndx++;
+    if (UpdAvgArrIndx > 9)
     {
-      INADAT.I = 0;
-      Calc.P = 0;
+      UpdAvgArrIndx = 0;
     }
-
-    // Check if battery is full..
-    if (bms.alarm.levelOnePackVoltageTooHigh || bms.alarm.levelOneCellVoltageTooHigh || INADAT.V > BAT_FULL_V)
+    // Recalculate 1hr power average
+    float Pavg_Sum = 0;
+    for (int i = 0; i < 10; i++)
     {
-      Calc.SOC = 100;
-      Calc.max_Ws = Calc.Ws;
+      Pavg_Sum += VCHRG1.Avg_PPV_Arr[i];
     }
-    // ..or empty
-    else if ((INADAT.V <= BAT_EMPTY_V) || (FirstLoop && INADAT.V < BAT_NEARLY_EMPTY_V))
-    {
-      Calc.SOC = 0;
-      Calc.Ws = 0;
-    }
-
-    // Display enabled?
-    EnableDisplay = (bool)digitalRead(BUT1);
+    VCHRG1.Avg_PPV = Pavg_Sum / 10;
   }
 
   //
   // Publish data to MQTT broker
   //
-  if (((UptimeSeconds - LastDataUpdate) >= DATA_UPDATE_INTERVAL || FirstLoop) && mqttClt.connected())
+  if (((UptimeSeconds - MQTTLastDataPublish) >= DATA_UPDATE_INTERVAL || FirstLoop) && mqttClt.connected())
   {
-    LastDataUpdate = UptimeSeconds;
+    MQTTLastDataPublish = UptimeSeconds;
+    mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
+
     // Daly BMS and Controller Data
     if (BMSresponding)
     {
+      // Send cell voltages
+      for (int i = 0; i < bms.get.numberOfCells; i++)
+      {
+        int j = i + 1;
+        String MqttTopStr = String(t_DV_C_Templ) + String(j) + "V";
+        mqttClt.publish(MqttTopStr.c_str(), String((bms.get.cellVmV[i] / 1000), 3).c_str(), true);
+      }
+      // send any other more or less useful stuff
       mqttClt.publish(t_DSOC, String(bms.get.packSOC, 1).c_str(), true);
       mqttClt.publish(t_DV, String(bms.get.packVoltage, 2).c_str(), true);
       mqttClt.publish(t_DdV, String((bms.get.cellDiff / 1000), 3).c_str(), true);
       mqttClt.publish(t_DI, String(bms.get.packCurrent, 2).c_str(), true);
-      mqttClt.publish(t_DV_C1, String((bms.get.cellVmV[0] / 1000), 3).c_str(), true);
-      mqttClt.publish(t_DV_C2, String((bms.get.cellVmV[1] / 1000), 3).c_str(), true);
-      mqttClt.publish(t_DV_C3, String((bms.get.cellVmV[2] / 1000), 3).c_str(), true);
-      mqttClt.publish(t_DV_C4, String((bms.get.cellVmV[3] / 1000), 3).c_str(), true);
       mqttClt.publish(t_DLSw, String(Bool_Decoder[(int)bms.get.disChargeFetState]).c_str(), true);
       mqttClt.publish(t_DCSw, String(Bool_Decoder[(int)bms.get.chargeFetState]).c_str(), true);
       mqttClt.publish(t_DTemp, String(bms.get.tempAverage).c_str(), true);
@@ -340,21 +323,13 @@ void user_loop()
     {
       mqttClt.publish(t_Ctrl_StatT, String("BMS_Fail").c_str(), true);
     }
-    mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
 
-    // INA226 and calculated data
-    mqttClt.publish(t_IV, String(INADAT.V, 2).c_str(), true);
-    mqttClt.publish(t_II, String(INADAT.I, 2).c_str(), true);
-    mqttClt.publish(t_IP, String(Calc.P, 1).c_str(), true);
-    mqttClt.publish(t_C_SOC, String(Calc.SOC, 1).c_str(), true);
-    mqttClt.publish(t_C_MaxWh, String((Calc.max_Ws / 3600), 3).c_str(), true);
-    mqttClt.publish(t_C_Wh, String((Calc.Ws / 3600), 1).c_str(), true);
-
-#ifdef VEDIR_CHRG
+    // VE.Direct Charger #1
     if ((UptimeSeconds - VCHRG1.lastUpdate) < VED_TIMEOUT)
     {
       if (VCHRG1.lastUpdate >= VCHRG1.lastPublish)
       {
+        // New data available to publish
         // Decode most important CS values to text
         switch (atoi(VED_Chrg1.veValue[VCHRG1.iCS]))
         {
@@ -388,10 +363,10 @@ void user_loop()
 
         mqttClt.publish(t_VED_C1_PPV, String(VED_Chrg1.veValue[VCHRG1.iPPV]).c_str(), true);
         mqttClt.publish(t_VED_C1_IB, String((atof(VED_Chrg1.veValue[VCHRG1.iIB]) / 1000), 2).c_str(), true);
-        mqttClt.publish(t_VED_C1_VB, String((atof(VED_Chrg1.veValue[VCHRG1.iVB]) / 1000), 2).c_str(), true);
         mqttClt.publish(t_VED_C1_MPPT, String(VED_MPPT_Decoder[atoi(VED_Chrg1.veValue[VCHRG1.iMPPT])]).c_str(), true);
         mqttClt.publish(t_VED_C1_H20, String((atoi(VED_Chrg1.veValue[VCHRG1.iH20]) * 10)).c_str(), true);
         mqttClt.publish(t_VED_C1_CSTAT, String(VED_ConnStat_Decoder[VCHRG1.ConnStat]).c_str(), true);
+        mqttClt.publish(t_VED_C1_AvgPPV, String(VCHRG1.Avg_PPV, 0).c_str(), true);
         // Data published, connection OK
         VCHRG1.ConnStat = 1;
         VCHRG1.lastPublish = UptimeSeconds;
@@ -405,18 +380,17 @@ void user_loop()
       mqttClt.publish(t_VED_C1_CSTAT, String(VED_ConnStat_Decoder[VCHRG1.ConnStat]).c_str(), true);
     }
 
-#endif // VEDIR_CHRG
-
-#ifdef VEDIR_SHUNT
+    // VE.Direct SmartShunt
     if ((UptimeSeconds - VSS.lastUpdate) < VED_TIMEOUT)
     {
       if (VSS.lastUpdate >= VSS.lastPublish)
       {
+        // New data available to publish
         mqttClt.publish(t_VED_SH_V, String(VSS.V, 2).c_str(), true);
-        mqttClt.publish(t_VED_SH_I, String(VSS.I, 2).c_str(), true);
+        mqttClt.publish(t_VED_SH_I, String(VSS.I, 1).c_str(), true);
         mqttClt.publish(t_VED_SH_P, String(VSS.P).c_str(), true);
-        mqttClt.publish(t_VED_SH_CE, String(VSS.CE, 2).c_str(), true);
-        mqttClt.publish(t_VED_SH_SOC, String(VSS.SOC, 1).c_str(), true);
+        mqttClt.publish(t_VED_SH_CE, String(VSS.CE, 1).c_str(), true);
+        mqttClt.publish(t_VED_SH_SOC, String(VSS.SOC, 0).c_str(), true);
         mqttClt.publish(t_VED_SH_TTG, String(VSS.TTG).c_str(), true);
         mqttClt.publish(t_VED_SH_ALARM, String(VED_Shnt.veValue[VSS.iALARM]).c_str(), true);
         mqttClt.publish(t_VED_SH_AR, String(VED_Shnt.veValue[VSS.iAR]).c_str(), true);
@@ -432,36 +406,8 @@ void user_loop()
       VSS.ConnStat = 2;
       mqttClt.publish(t_VED_SH_CSTAT, String(VED_ConnStat_Decoder[VSS.ConnStat]).c_str(), true);
     }
-#endif // VEDIR_SHUNT
 
     // Add some more delay for WiFi processing
-    delay(100);
-  }
-
-  //
-  // Update 1hr power average every 6 minutes
-  //
-  if ((UptimeSeconds - LastAvgCalc) >= 360 || FirstLoop)
-  {
-    LastAvgCalc = UptimeSeconds;
-    // get power avg of the prev 6 minutes and add it to the averaging data
-    Calc.P_Avg_Arr[UpdAvgArrIndx] = (Calc.Ws - Calc.P_Avg_Prev_Ws) / 360;
-    Calc.P_Avg_Prev_Ws = Calc.Ws;
-    // rotate to next array element
-    UpdAvgArrIndx++;
-    if (UpdAvgArrIndx > 9)
-    {
-      UpdAvgArrIndx = 0;
-    }
-    // Recalculate 1hr power average
-    float Pavg_Sum = 0;
-    for (int i = 0; i < 10; i++)
-    {
-      Pavg_Sum += Calc.P_Avg_Arr[i];
-    }
-    Calc.P_Avg_1h = Pavg_Sum / 10;
-    mqttClt.publish(t_C_AvgP, String(Calc.P_Avg_1h, 1).c_str(), true);
-    // Add some delay for WiFi processing
     delay(100);
   }
 
@@ -469,35 +415,30 @@ void user_loop()
   // Load Controller (SSR1)
   //
   // If CSOC has reached the configured charge limit, enable load
-  if (!Ctrl_SSR1 && Calc.SOC >= ENABLE_LOAD_CSOC)
+  if (!Ctrl_SSR1_autoSetState && VSS.SOC >= ENABLE_LOAD_SOC)
   {
-    Ctrl_SSR1 = true;
-    mqttClt.publish(t_Ctrl_SSR1, String("on").c_str(), true);
-    // Add some delay for WiFi processing
-    delay(100);
+    Ctrl_SSR1 = 1;
+    Ctrl_SSR1_autoSetState = true;
   }
   // if we have a really sunny day, enable load at the configured HIGH_PV limits
-  else if (!Ctrl_SSR1 && Calc.P_Avg_1h >= HIGH_PV_AVG_PWR && Calc.SOC >= HIGH_PV_EN_LOAD_CSOC)
+  else if (!Ctrl_SSR1_autoSetState && VCHRG1.Avg_PPV >= HIGH_PV_AVG_PWR && VSS.SOC >= HIGH_PV_EN_LOAD_SOC)
   {
-    Ctrl_SSR1 = true;
-    mqttClt.publish(t_Ctrl_SSR1, String("on").c_str(), true);
-    // Add some delay for WiFi processing
-    delay(100);
+    Ctrl_SSR1 = 1;
+    Ctrl_SSR1_autoSetState = true;
   }
 
   // Disable SSR1 when CSOC_DISABLE_LOAD is reached
-  if (Ctrl_SSR1 && Calc.SOC <= DISABLE_LOAD_CSOC)
+  // This must be done also if the load was enabled manually, so use effective SSR1_actState
+  if (Ctrl_SSR1_actState && VSS.SOC <= DISABLE_LOAD_SOC)
   {
-    Ctrl_SSR1 = false;
-    mqttClt.publish(t_Ctrl_SSR1, String("off").c_str(), true);
-    // Add some delay for WiFi processing
-    delay(100);
+    Ctrl_SSR1 = 0;
+    Ctrl_SSR1_autoSetState = false;
   }
 
   //
   // Active Balancer Controller (SSR2)
   //
-  if (Ctrl_SSR2)
+  if (Ctrl_SSR2_autoSetState)
   {
     // Balancer is active
     // If balancer is running for at least BAL_MIN_ON_DUR..
@@ -511,11 +452,8 @@ void user_loop()
         if (bms.get.cellVmV[i] < BAL_OFF_CELLV)
         {
           // Low cell voltage threshold reached, disable Balancer
-          Ctrl_SSR2 = false;
-          mqttClt.publish(t_Ctrl_SSR2, String("off").c_str(), true);
-          // Add some delay for WiFi processing
-          delay(100);
-          // end loop, one cell below threshold is enough
+          Ctrl_SSR2 = 0;
+          Ctrl_SSR2_autoSetState = false;
           break;
         }
       }
@@ -525,7 +463,7 @@ void user_loop()
   {
     // Balancer is inactive
     // If 1hr Power average is above threshold..
-    if (Calc.P_Avg_1h > BAL_ON_MIN_PWRAVG)
+    if (VCHRG1.Avg_PPV > BAL_ON_MIN_PWRAVG)
     {
       // ..check if any cell is above BAL_ON_CELLV
       for (int i = 0; i < bms.get.numberOfCells; i++)
@@ -533,10 +471,8 @@ void user_loop()
         if (bms.get.cellVmV[i] > BAL_ON_CELLV)
         {
           // High cell voltage threshold reached, enable Balancer
-          Ctrl_SSR2 = true;
-          mqttClt.publish(t_Ctrl_SSR2, String("on").c_str(), true);
-          // Add some delay for WiFi processing
-          delay(100);
+          Ctrl_SSR2 = 1;
+          Ctrl_SSR2_autoSetState = true;
           // remember when we've enabled the Balancer
           LastBalancerEnable = UptimeSeconds;
           // end loop, one cell above threshold is enough
@@ -547,12 +483,12 @@ void user_loop()
   }
 
   //
-  // Set desired Daly MOSFET charge / discharge switch states
+  // Set desired switch states
   //
-  if (Ctrl_CSw < 2)
+  if (Ctrl_DalyChSw < 2)
   {
     // Set desired Charge Switch state
-    switch (Ctrl_CSw)
+    switch (Ctrl_DalyChSw)
     {
     case 0:
       bms.setChargeMOS(false);
@@ -561,14 +497,14 @@ void user_loop()
       bms.setChargeMOS(true);
       break;
     }
-    // state changed, reset to "do not change"
-    Ctrl_CSw = 2;
+    // desired state set, reset to "do not change"
+    Ctrl_DalyChSw = 2;
     mqttClt.publish(t_Ctrl_CSw, String("dnc").c_str(), true);
   }
-  if (Ctrl_LSw < 2)
+  if (Ctrl_DalyLoadSw < 2)
   {
     // Set desired Discharge Switch state
-    switch (Ctrl_LSw)
+    switch (Ctrl_DalyLoadSw)
     {
     case 0:
       bms.setDischargeMOS(false);
@@ -577,106 +513,56 @@ void user_loop()
       bms.setDischargeMOS(true);
       break;
     }
-    // state changed, reset to "do not change"
-    Ctrl_LSw = 2;
+    // desired state set, reset to "do not change"
+    Ctrl_DalyLoadSw = 2;
     mqttClt.publish(t_Ctrl_LSw, String("dnc").c_str(), true);
   }
 
   //
   // Set desired SSR1 state
   //
-  if (Ctrl_SSR1 != (bool)digitalRead(SSR1))
+  if (Ctrl_SSR1 < 2)
   {
-    if (Ctrl_SSR1)
+    // Set desired SSR1 state
+    switch (Ctrl_SSR1)
     {
-      digitalWrite(SSR1, HIGH);
-    }
-    else
-    {
+    case 0:
       digitalWrite(SSR1, LOW);
+      Ctrl_SSR1_actState = false;
+      break;
+    case 1:
+      digitalWrite(SSR1, HIGH);
+      Ctrl_SSR1_actState = true;
+      break;
     }
+    // desired state set, reset to "do not change"
+    Ctrl_SSR1 = 2;
+    mqttClt.publish(t_Ctrl_SSR1, String("dnc").c_str(), true);
+    mqttClt.publish(t_Ctrl_actSSR1, String(Bool_Decoder[(int)Ctrl_SSR1_actState]).c_str(), true);
   }
 
   //
   // Set desired SSR2 state
   //
-  if (Ctrl_SSR2 != (bool)digitalRead(SSR2))
+  if (Ctrl_SSR2 < 2)
   {
-    if (Ctrl_SSR2)
+    // Set desired SSR2 state
+    switch (Ctrl_SSR2)
     {
-      digitalWrite(SSR2, HIGH);
-    }
-    else
-    {
+    case 0:
       digitalWrite(SSR2, LOW);
+      Ctrl_SSR2_actState = false;
+      break;
+    case 1:
+      digitalWrite(SSR2, HIGH);
+      Ctrl_SSR2_actState = true;
+      break;
     }
-  }
-
-  //
-  // Update display
-  //
-  // INFO: 21 characters per line, 4 lines on small font (set1X)
-  // 11 characters per line on large font (set2X)
-  if (EnableDisplay)
-  {
-    if ((UptimeSeconds - LastDisplayChange) >= DISPLAY_REFRESH_INTERVAL)
-    {
-      // Change displayed Dataset
-      switch (NextDataSet)
-      {
-      case 0:
-        oled.clear();
-        oled.set1X();
-        oled.println("WiFi: " + String(Stat_Decoder[(int)WiFi.isConnected()]));
-        oled.println("MQTT: " + String(Stat_Decoder[(int)mqttClt.connected()]));
-        oled.println("BMS:  " + String(Stat_Decoder[(int)BMSresponding]));
-        oled.println("INA:  " + String(Stat_Decoder[(int)INA_avail]));
-        NextDataSet++;
-        break;
-      case 1:
-        oled.clear();
-        oled.set1X();
-        oled.println("Daly SoC: " + String(bms.get.packSOC, 1));
-        oled.println("Daly Vbat: " + String(bms.get.packVoltage, 2));
-        oled.println("Daly Ibat: " + String(bms.get.packCurrent, 2));
-        oled.println("Daly Vdiff: " + String((bms.get.cellDiff / 1000), 3));
-        NextDataSet++;
-        break;
-      case 2:
-        oled.clear();
-        oled.set1X();
-        oled.println("Calc SoC: " + String(Calc.SOC, 1));
-        oled.println("INA Vbat: " + String(INADAT.V, 2));
-        oled.println("INA Ibat: " + String(INADAT.I, 2));
-        oled.println("INA PWR:  " + String(Calc.P, 1));
-        NextDataSet = 3;
-        break;
-      case 3:
-        oled.clear();
-        oled.set1X();
-#ifdef VEDIR_CHRG
-        oled.println("VE.D_C1 FrCnt: " + String(VED_Chrg1.frameCounter));
-        oled.println("VE.D_C1 PPV: " + String(VED_Chrg1.veValue[VCHRG1.iPPV]));
-#else
-        oled.println("Charge FET: " + String(Bool_Decoder[(int)bms.get.chargeFetState]));
-        oled.println("Disch FET:  " + String(Bool_Decoder[(int)bms.get.disChargeFetState]));
-#endif
-        oled.println("SSR1:       " + String(Bool_Decoder[(int)Ctrl_SSR1]));
-        oled.println("Uptime:     " + String(UptimeSeconds));
-        NextDataSet = 0;
-        break;
-      }
-      LastDisplayChange = UptimeSeconds;
-      OledCleared = false;
-    }
-  }
-  else
-  {
-    if (!OledCleared)
-    {
-      oled.clear();
-      OledCleared = true;
-    }
+    // desired state set, reset to "do not change"
+    Ctrl_SSR2 = 2;
+    mqttClt.publish(t_Ctrl_SSR2, String("dnc").c_str(), true);
+    // and publish active state immediately for better responsiveness in UI
+    mqttClt.publish(t_Ctrl_actSSR2, String(Bool_Decoder[(int)Ctrl_SSR2_actState]).c_str(), true);
   }
 
   // Reset FirstLoop
@@ -684,6 +570,9 @@ void user_loop()
   {
     FirstLoop = false;
   }
+
+  // Add some more delay for WiFi processing
+  delay(100);
 
 #ifdef ONBOARD_LED
   // Toggle LED at each loop

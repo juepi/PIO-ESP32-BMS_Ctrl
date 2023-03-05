@@ -208,6 +208,9 @@ bool OTAUpdateHandler()
             SentOtaIPtrue = false;
             SentUpdateRequested = false;
             delay(100);
+            // Reboot after cancelled update
+            ESP.restart();
+            delay(500);
             return false;
         }
     }
@@ -275,22 +278,22 @@ void MqttCallback(char *topic, byte *payload, unsigned int length)
     {
         if (msgString == "on")
         {
-            Ctrl_LSw = 1;
+            Ctrl_DalyLoadSw = 1;
             ReceivedTopics++;
         }
         else if (msgString == "off")
         {
-            Ctrl_LSw = 0;
+            Ctrl_DalyLoadSw = 0;
             ReceivedTopics++;
         }
         else if (msgString == "dnc")
         {
-            Ctrl_LSw = 2;
+            Ctrl_DalyLoadSw = 2;
             ReceivedTopics++;
         }
         else
         {
-            DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid Ctrl_LSw: " + String(msgString));
+            DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid Ctrl_DalyLoadSw: " + String(msgString));
             delay(200);
         }
     }
@@ -298,22 +301,22 @@ void MqttCallback(char *topic, byte *payload, unsigned int length)
     {
         if (msgString == "on")
         {
-            Ctrl_CSw = 1;
+            Ctrl_DalyChSw = 1;
             ReceivedTopics++;
         }
         else if (msgString == "off")
         {
-            Ctrl_CSw = 0;
+            Ctrl_DalyChSw = 0;
             ReceivedTopics++;
         }
-        else if (msgString == "dnc" || msgString == "done")
+        else if (msgString == "dnc")
         {
-            Ctrl_CSw = 2;
+            Ctrl_DalyChSw = 2;
             ReceivedTopics++;
         }
         else
         {
-            DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid Ctrl_CSw: " + String(msgString));
+            DEBUG_PRINTLN("MQTT: ERROR: Fetched invalid Ctrl_DalyChSw: " + String(msgString));
             delay(200);
         }
     }
@@ -321,12 +324,17 @@ void MqttCallback(char *topic, byte *payload, unsigned int length)
     {
         if (msgString == "on")
         {
-            Ctrl_SSR1 = true;
+            Ctrl_SSR1 = 1;
             ReceivedTopics++;
         }
         else if (msgString == "off")
         {
-            Ctrl_SSR1 = false;
+            Ctrl_SSR1 = 0;
+            ReceivedTopics++;
+        }
+        else if (msgString == "dnc")
+        {
+            Ctrl_SSR1 = 2;
             ReceivedTopics++;
         }
         else
@@ -339,12 +347,17 @@ void MqttCallback(char *topic, byte *payload, unsigned int length)
     {
         if (msgString == "on")
         {
-            Ctrl_SSR2 = true;
+            Ctrl_SSR2 = 1;
             ReceivedTopics++;
         }
         else if (msgString == "off")
         {
-            Ctrl_SSR2 = false;
+            Ctrl_SSR2 = 0;
+            ReceivedTopics++;
+        }
+        else if (msgString == "dnc")
+        {
+            Ctrl_SSR2 = 2;
             ReceivedTopics++;
         }
         else
