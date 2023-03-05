@@ -8,7 +8,7 @@ To configure the firmware for your needs, see files `user_setup.h` and `mqtt_ota
 - 1x [WEMOS S2 Mini](https://www.wemos.cc/en/latest/s2/s2_mini.html) or any other ESP32 should work (adopt `platformio.ini`to your needs)
 - 1x [Daly Smart BMS Systems](https://www.aliexpress.com/store/4165007) with UART port
 - a Lithium battery fitting your requirements and BMS
-- >= 1x [Victron SmartSolar](https://www.victronenergy.com/solar-charge-controllers/smartsolar-100-30-100-50) charger (or any other charger supporting the text version of the VE.Direct protocol)
+- 1x [Victron SmartSolar](https://www.victronenergy.com/solar-charge-controllers/smartsolar-100-30-100-50) charger (or any other charger supporting the text version of the VE.Direct protocol)
 - 1x [Victron SmartShunt](https://www.victronenergy.com/battery-monitors/smart-battery-shunt) with the amps required for your setup
 - 3x [ADUM1201 UART Isolators](https://aliexpress.com/item/1005003649567525.html) or any other digital isolators you prefer
 - 1x [AQW212EH Optocoupler](https://industry.panasonic.eu/de/components/relays/relays/photomos-relays/photomos-ge-2-form/aqw212eh-aqw212eh)
