@@ -54,22 +54,23 @@ extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
 #define DALY_UART Serial1
 // Data readout interval in seconds
 #define DALY_UPDATE_INTERVAL 5
+#define DALY_TIMEOUT 60 // If no data update occurs within this timespan (seconds), connection to Daly BMS considered dead
 
 //
 // Load settings (SSR1)
 //
 #define ENABLE_LOAD_SOC 90     // SOC at which to enable the load (SSR1)
-#define DISABLE_LOAD_SOC 5     // SOC at which load will be disconnected
-#define HIGH_PV_AVG_PWR 30     // If the average charging power is higher than this..
-#define HIGH_PV_EN_LOAD_SOC 70 //.. enable the load at an earlier SOC to avoid wasting PV energy
+#define DISABLE_LOAD_SOC 10    // SOC at which load will be disconnected
+#define HIGH_PV_AVG_PWR 35     // If the average charging power is higher than this..
+#define HIGH_PV_EN_LOAD_SOC 50 //.. enable the load at an earlier SOC to avoid wasting PV energy
+#define BOOT_EN_LOAD_SOC 30    // If SOC is >= this value, load will be enabled at firmware startup
 
 //
 // Active Balancer Settings (SSR2)
 //
-#define BAL_ON_CELLV 3400    // ENABLE balancer if a cell has reached this voltage level [mV]
-#define BAL_ON_MIN_PWRAVG 10 // AND the minimum PV power average of the last hour is higher than 10W
-#define BAL_OFF_CELLV 3300   // DISABLE balancer if a cell has fallen below this voltage level [mV]
-#define BAL_MIN_ON_DUR 3600  // Minimum duration to keep balancer enabled [s]
+#define BAL_ON_CELLV 3400  // ENABLE balancer if a cell has reached this voltage level [mV]
+#define BAL_ON_CELLDIFF 30 // If cell voltage difference is higher than this [mV], enable balancer
+#define BAL_OFF_CELLV 3300 // DISABLE balancer if a cell has fallen below this voltage level [mV]
 
 //
 // Victron VE.Direct settings
@@ -146,6 +147,7 @@ extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
 #define t_DLSw TOPTREE "Daly_LSw"             // Actual "switch state" for load MOSFETs (0/1)
 #define t_DCSw TOPTREE "Daly_CSw"             // Actual "switch state" for charging MOSFETs (0/1)
 #define t_DTemp TOPTREE "Daly_Temp"           // Temperature sensor of the BMS
+#define t_D_CSTAT TOPTREE "Daly_CSTAT"        // Daly Serial connection status
 #define t_Ctrl_StatT TOPTREE "CtrlStatTXT"    // ESP Controller status text provided through MQTT (basically to check if UART to Daly BMS is OK)
 #define t_Ctrl_StatU TOPTREE "CtrlStatUpt"    // ESP Controller uptime provided through MQTT
 #define t_Ctrl_actSSR1 TOPTREE "Ctrl_actSSR1" // Actual state of SSR1 GPIO (on/off)
@@ -176,8 +178,7 @@ struct VED_Shunt_data
     int iALARM = 255;
     int iAR = 255;
     uint32_t lastUpdate = 0;  // to verify connection is active
-    uint32_t lastValidFr = 0; // last valid frame decoded
-    uint32_t lastPublish = 0; // and data needs to be published
+    uint32_t lastValidFr = 0; // last valid frame decoded (uptime)
     int ConnStat = 0;         // Connection Status
 };
 
@@ -194,8 +195,7 @@ struct VED_Charger_data
     int iERR = i_CHRG_LBL_ERR;
     int iH20 = i_CHRG_LBL_H20;
     uint32_t lastUpdate = 0;  // to verify connection is active
-    uint32_t lastValidFr = 0; // last valid frame decoded
-    uint32_t lastPublish = 0; // and data needs to be published
+    uint32_t lastValidFr = 0; // last valid frame decoded (uptime)
     int ConnStat = 0;         // Connection Status
 };
 

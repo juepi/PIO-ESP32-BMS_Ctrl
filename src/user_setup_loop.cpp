@@ -83,6 +83,8 @@ void user_loop()
   // Daly BMS
   static bool BMSresponding = false;
   static uint32_t BMSLastDataUpdate = 0;
+  static uint32_t BMSLastValidData = 0;
+  static int BMSConnStat = 0;
   // Uptime calculation
   static uint32_t UptimeSeconds = 0;
   static unsigned long oldMillis = 0;
@@ -90,14 +92,12 @@ void user_loop()
   static bool Ctrl_SSR1_autoSetState = false; // desired state of automatic mode
   static bool Ctrl_SSR1_actState = false;     // currently active state set on GPIO
   // Balancer
-  static uint32_t LastBalancerEnable = 0;
-  static bool Ctrl_SSR2_autoSetState = false; // desired state of automatic mode
-  static bool Ctrl_SSR2_actState = false;     // currently active state set on GPIO
+  static bool Ctrl_SSR2_actState = false; // currently active state set on GPIO
   // Other helpers
   static uint32_t MQTTLastDataPublish = 0;
   static const char *Bool_Decoder[] = {"off", "on"};
-  // VE.Direct Global
-  static const char *VED_ConnStat_Decoder[] = {"Startup", "Ok", "Timeout"};
+  // Connection Status decoding (for all serial connections)
+  static const char *ConnStat_Decoder[] = {"Startup", "Ok", "Timeout", "Read_Fail"};
   // VE.Direct Charger
   // Int to Text conversion for Charger data
   static short UpdAvgArrIndx = 0; // 1hr average PPV calculation
@@ -112,7 +112,7 @@ void user_loop()
   //
   // Start the action
   //
-  // on boot, wait a seconds to ensure we have received data from the VE.Direct devices
+  // on boot, wait a second to ensure we have received data from the VE.Direct devices
   if (FirstLoop)
   {
     delay(1000);
@@ -141,12 +141,35 @@ void user_loop()
       // new valid frame decoded from VeDirectFrameHandler
       VCHRG1.lastUpdate = UptimeSeconds;
       VCHRG1.lastValidFr = VED_Chrg1.frameCounter;
+      // Connection OK
+      VCHRG1.ConnStat = 1;
+      // Store new data in struct (only PPV needed here, anything else will just be copied out to MQTT topics)
+      VCHRG1.PPV = atoi(VED_Chrg1.veValue[VCHRG1.iPPV]);
+    }
+    else
+    {
+      if ((UptimeSeconds - VCHRG1.lastUpdate) > VED_TIMEOUT)
+      {
+        // Connection timed out (due to no valid data within VED_TIMEOUT)
+        VCHRG1.ConnStat = 2;
+      }
+      else
+      {
+        // invalid or incomplete frame received
+        // this happens during regular (non-blocking) operation of VeDirectFrameHandler, so set ConnStat to OK
+        VCHRG1.ConnStat = 1;
+      }
     }
     // grant time for background tasks
     delay(1);
-
-    // Store data in struct (only PPV needed here, anything else will just be copied out to MQTT topics)
-    VCHRG1.PPV = atoi(VED_Chrg1.veValue[VCHRG1.iPPV]);
+  }
+  else
+  {
+    if ((UptimeSeconds - VCHRG1.lastUpdate) > VED_TIMEOUT)
+    {
+      // Connection timed out (no data received at all within VED_TIMEOUT)
+      VCHRG1.ConnStat = 2;
+    }
   }
 
   if (VEDSer_Shnt.available())
@@ -160,93 +183,117 @@ void user_loop()
       // new valid frame decoded from VeDirectFrameHandler
       VSS.lastUpdate = UptimeSeconds;
       VSS.lastValidFr = VED_Shnt.frameCounter;
-    }
-    // grant time for background tasks
-    delay(1);
-  }
+      // Connection OK
+      VSS.ConnStat = 1;
 
-  // Verify data and store in struct
-  // Battery Voltage
-  if (VSS.iV == 255)
-  {
-    VSS.iV = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_V]);
-  }
-  if (VSS.iV != 255)
-  {
-    if ((atoi(VED_Shnt.veValue[VSS.iV]) > 10000) && (atoi(VED_Shnt.veValue[VSS.iV]) < 30000))
-    {
-      VSS.V = atof(VED_Shnt.veValue[VSS.iV]) / 1000;
-    }
-  }
-  // Battery Current
-  if (VSS.iI == 255)
-  {
-    VSS.iI = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_I]);
-  }
-  if (VSS.iI != 255)
-  {
-    if ((atoi(VED_Shnt.veValue[VSS.iI]) > -150000) && (atoi(VED_Shnt.veValue[VSS.iI]) < 150000))
-    {
-      VSS.I = atof(VED_Shnt.veValue[VSS.iI]) / 1000;
-    }
-  }
-  // Battery Power
-  if (VSS.iP == 255)
-  {
-    VSS.iP = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_P]);
-  }
-  if (VSS.iP != 255)
-  {
-    if ((atoi(VED_Shnt.veValue[VSS.iP]) > -2500) && (atoi(VED_Shnt.veValue[VSS.iP]) < 2500))
-    {
-      VSS.P = atoi(VED_Shnt.veValue[VSS.iP]);
-    }
-  }
-  // Consumed Energy
-  if (VSS.iCE == 255)
-  {
-    VSS.iCE = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_CE]);
-  }
-  if (VSS.iCE != 255)
-  {
-    if ((atoi(VED_Shnt.veValue[VSS.iCE]) >= -200000) && (atoi(VED_Shnt.veValue[VSS.iCE]) <= 0))
-    {
-      VSS.CE = atof(VED_Shnt.veValue[VSS.iCE]) / 1000;
-    }
-  }
-  // Battery SoC
-  if (VSS.iSOC == 255)
-  {
-    VSS.iSOC = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_SOC]);
-  }
-  if (VSS.iSOC != 255)
-  {
-    if ((atoi(VED_Shnt.veValue[VSS.iSOC]) >= 0) && (atoi(VED_Shnt.veValue[VSS.iSOC]) <= 1000))
-    {
-      VSS.SOC = atof(VED_Shnt.veValue[VSS.iSOC]) / 10;
-    }
-  }
-  // Battery TTG (time-to-empty)
-  if (VSS.iTTG == 255)
-  {
-    VSS.iTTG = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_TTG]);
-  }
-  if (VSS.iTTG != 255)
-  {
-    if ((atoi(VED_Shnt.veValue[VSS.iTTG]) >= -1) && (atoi(VED_Shnt.veValue[VSS.iTTG]) < 10000))
-    {
-      VSS.TTG = atoi(VED_Shnt.veValue[VSS.iTTG]);
-    }
-  }
+      // Verify data and store in struct
+      // Battery Voltage
+      if (VSS.iV == 255)
+      {
+        VSS.iV = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_V]);
+      }
+      if (VSS.iV != 255)
+      {
+        if ((atoi(VED_Shnt.veValue[VSS.iV]) > 10000) && (atoi(VED_Shnt.veValue[VSS.iV]) < 30000))
+        {
+          VSS.V = atof(VED_Shnt.veValue[VSS.iV]) / 1000;
+        }
+      }
+      // Battery Current
+      if (VSS.iI == 255)
+      {
+        VSS.iI = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_I]);
+      }
+      if (VSS.iI != 255)
+      {
+        if ((atoi(VED_Shnt.veValue[VSS.iI]) > -150000) && (atoi(VED_Shnt.veValue[VSS.iI]) < 150000))
+        {
+          VSS.I = atof(VED_Shnt.veValue[VSS.iI]) / 1000;
+        }
+      }
+      // Battery Power
+      if (VSS.iP == 255)
+      {
+        VSS.iP = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_P]);
+      }
+      if (VSS.iP != 255)
+      {
+        if ((atoi(VED_Shnt.veValue[VSS.iP]) > -2500) && (atoi(VED_Shnt.veValue[VSS.iP]) < 2500))
+        {
+          VSS.P = atoi(VED_Shnt.veValue[VSS.iP]);
+        }
+      }
+      // Consumed Energy
+      if (VSS.iCE == 255)
+      {
+        VSS.iCE = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_CE]);
+      }
+      if (VSS.iCE != 255)
+      {
+        if ((atoi(VED_Shnt.veValue[VSS.iCE]) >= -200000) && (atoi(VED_Shnt.veValue[VSS.iCE]) <= 0))
+        {
+          VSS.CE = atof(VED_Shnt.veValue[VSS.iCE]) / 1000;
+        }
+      }
+      // Battery SoC
+      if (VSS.iSOC == 255)
+      {
+        VSS.iSOC = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_SOC]);
+      }
+      if (VSS.iSOC != 255)
+      {
+        if ((atoi(VED_Shnt.veValue[VSS.iSOC]) >= 0) && (atoi(VED_Shnt.veValue[VSS.iSOC]) <= 1000))
+        {
+          VSS.SOC = atof(VED_Shnt.veValue[VSS.iSOC]) / 10;
+        }
+      }
+      // Battery TTG (time-to-empty)
+      if (VSS.iTTG == 255)
+      {
+        VSS.iTTG = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_TTG]);
+      }
+      if (VSS.iTTG != 255)
+      {
+        if ((atoi(VED_Shnt.veValue[VSS.iTTG]) >= -1) && (atoi(VED_Shnt.veValue[VSS.iTTG]) < 10000))
+        {
+          VSS.TTG = atoi(VED_Shnt.veValue[VSS.iTTG]);
+        }
+      }
 
-  // Get .veValue indexes for informational data (no data verification)
-  if (VSS.iALARM == 255)
-  {
-    VSS.iALARM = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_ALARM]);
+      // Get .veValue indexes for informational data (no data verification)
+      if (VSS.iALARM == 255)
+      {
+        VSS.iALARM = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_ALARM]);
+      }
+      if (VSS.iAR == 255)
+      {
+        VSS.iAR = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_AR]);
+      }
+    }
+    else
+    {
+      if ((UptimeSeconds - VSS.lastUpdate) > VED_TIMEOUT)
+      {
+        // Connection timed out (due to no valid data within VED_TIMEOUT)
+        VSS.ConnStat = 2;
+      }
+      else
+      {
+        // invalid or incomplete frame received
+        // this happens during regular (non-blocking) operation of VeDirectFrameHandler, so set ConnStat to OK
+        VSS.ConnStat = 1;
+      }
+      // grant time for background tasks
+      delay(1);
+    }
   }
-  if (VSS.iAR == 255)
+  else
   {
-    VSS.iAR = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_AR]);
+    if ((UptimeSeconds - VSS.lastUpdate) > VED_TIMEOUT)
+    {
+      // Connection timed out (no data received at all within VED_TIMEOUT)
+      VSS.ConnStat = 2;
+    }
   }
 
   //
@@ -257,6 +304,25 @@ void user_loop()
     // Fetch data from BMS
     // ATTN: takes between 640 and 710ms!
     BMSresponding = bms.update();
+    if (BMSresponding)
+    {
+      // data set received
+      BMSLastValidData = UptimeSeconds;
+      BMSConnStat = 1;
+    }
+    else
+    {
+      if ((UptimeSeconds - BMSLastValidData) > DALY_TIMEOUT)
+      {
+        // Timeout limit reached
+        BMSConnStat = 2;
+      }
+      else
+      {
+        // Not yet in timeout (readout failed)
+        BMSConnStat = 3;
+      }
+    }
     BMSLastDataUpdate = UptimeSeconds;
   }
 
@@ -295,10 +361,18 @@ void user_loop()
   if (((UptimeSeconds - MQTTLastDataPublish) >= DATA_UPDATE_INTERVAL || FirstLoop) && mqttClt.connected())
   {
     MQTTLastDataPublish = UptimeSeconds;
-    mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
 
-    // Daly BMS and Controller Data
-    if (BMSresponding)
+    // Controller
+    if (FirstLoop)
+    {
+      mqttClt.publish(t_Ctrl_StatT, String("Startup Firmware v" + String(FIRMWARE_VERSION)).c_str(), true);
+    }
+    mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
+    mqttClt.publish(t_Ctrl_actSSR1, String(Bool_Decoder[(int)Ctrl_SSR1_actState]).c_str(), true);
+    mqttClt.publish(t_Ctrl_actSSR2, String(Bool_Decoder[(int)Ctrl_SSR2_actState]).c_str(), true);
+
+    // Daly BMS
+    if (BMSConnStat <= 1)
     {
       // Send cell voltages
       for (int i = 0; i < bms.get.numberOfCells; i++)
@@ -315,96 +389,81 @@ void user_loop()
       mqttClt.publish(t_DLSw, String(Bool_Decoder[(int)bms.get.disChargeFetState]).c_str(), true);
       mqttClt.publish(t_DCSw, String(Bool_Decoder[(int)bms.get.chargeFetState]).c_str(), true);
       mqttClt.publish(t_DTemp, String(bms.get.tempAverage).c_str(), true);
-      mqttClt.publish(t_Ctrl_StatT, String("ok").c_str(), true);
+      mqttClt.publish(t_D_CSTAT, String(ConnStat_Decoder[BMSConnStat]).c_str(), true);
       // Add some delay for WiFi processing
       delay(100);
     }
     else
     {
-      mqttClt.publish(t_Ctrl_StatT, String("BMS_Fail").c_str(), true);
+      // report (broken) connection state
+      mqttClt.publish(t_D_CSTAT, String(ConnStat_Decoder[BMSConnStat]).c_str(), true);
     }
 
     // VE.Direct Charger #1
-    if ((UptimeSeconds - VCHRG1.lastUpdate) < VED_TIMEOUT)
+    if (VCHRG1.ConnStat <= 1)
     {
-      if (VCHRG1.lastUpdate >= VCHRG1.lastPublish)
+      // Decode most important CS values to text
+      switch (atoi(VED_Chrg1.veValue[VCHRG1.iCS]))
       {
-        // New data available to publish
-        // Decode most important CS values to text
-        switch (atoi(VED_Chrg1.veValue[VCHRG1.iCS]))
-        {
-        case 0 ... 5:
-          mqttClt.publish(t_VED_C1_CS, String(VED_CS_Decoder[atoi(VED_Chrg1.veValue[VCHRG1.iCS])]).c_str(), true);
-          break;
-        default:
-          mqttClt.publish(t_VED_C1_CS, String(VED_Chrg1.veValue[VCHRG1.iCS]).c_str(), true);
-          break;
-        }
-
-        // Decode most important ERR values to text
-        switch (atoi(VED_Chrg1.veValue[VCHRG1.iERR]))
-        {
-        case 0:
-          mqttClt.publish(t_VED_C1_ERR, String("Ok").c_str(), true);
-          break;
-        case 2:
-          mqttClt.publish(t_VED_C1_ERR, String("Vbat_HI").c_str(), true);
-          break;
-        case 17:
-          mqttClt.publish(t_VED_C1_ERR, String("Ch_Temp_HI").c_str(), true);
-          break;
-        case 18:
-          mqttClt.publish(t_VED_C1_ERR, String("Ch_I_HI").c_str(), true);
-          break;
-        default:
-          mqttClt.publish(t_VED_C1_CS, String(VED_Chrg1.veValue[VCHRG1.iERR]).c_str(), true);
-          break;
-        }
-
-        mqttClt.publish(t_VED_C1_PPV, String(VED_Chrg1.veValue[VCHRG1.iPPV]).c_str(), true);
-        mqttClt.publish(t_VED_C1_IB, String((atof(VED_Chrg1.veValue[VCHRG1.iIB]) / 1000), 2).c_str(), true);
-        mqttClt.publish(t_VED_C1_MPPT, String(VED_MPPT_Decoder[atoi(VED_Chrg1.veValue[VCHRG1.iMPPT])]).c_str(), true);
-        mqttClt.publish(t_VED_C1_H20, String((atoi(VED_Chrg1.veValue[VCHRG1.iH20]) * 10)).c_str(), true);
-        mqttClt.publish(t_VED_C1_CSTAT, String(VED_ConnStat_Decoder[VCHRG1.ConnStat]).c_str(), true);
-        mqttClt.publish(t_VED_C1_AvgPPV, String(VCHRG1.Avg_PPV, 0).c_str(), true);
-        // Data published, connection OK
-        VCHRG1.ConnStat = 1;
-        VCHRG1.lastPublish = UptimeSeconds;
-        delay(100);
+      case 0 ... 5:
+        mqttClt.publish(t_VED_C1_CS, String(VED_CS_Decoder[atoi(VED_Chrg1.veValue[VCHRG1.iCS])]).c_str(), true);
+        break;
+      default:
+        mqttClt.publish(t_VED_C1_CS, String(VED_Chrg1.veValue[VCHRG1.iCS]).c_str(), true);
+        break;
       }
+
+      // Decode most important ERR values to text
+      switch (atoi(VED_Chrg1.veValue[VCHRG1.iERR]))
+      {
+      case 0:
+        mqttClt.publish(t_VED_C1_ERR, String("Ok").c_str(), true);
+        break;
+      case 2:
+        mqttClt.publish(t_VED_C1_ERR, String("Vbat_HI").c_str(), true);
+        break;
+      case 17:
+        mqttClt.publish(t_VED_C1_ERR, String("Ch_Temp_HI").c_str(), true);
+        break;
+      case 18:
+        mqttClt.publish(t_VED_C1_ERR, String("Ch_I_HI").c_str(), true);
+        break;
+      default:
+        mqttClt.publish(t_VED_C1_CS, String(VED_Chrg1.veValue[VCHRG1.iERR]).c_str(), true);
+        break;
+      }
+
+      mqttClt.publish(t_VED_C1_PPV, String(VED_Chrg1.veValue[VCHRG1.iPPV]).c_str(), true);
+      mqttClt.publish(t_VED_C1_IB, String((atof(VED_Chrg1.veValue[VCHRG1.iIB]) / 1000), 2).c_str(), true);
+      mqttClt.publish(t_VED_C1_MPPT, String(VED_MPPT_Decoder[atoi(VED_Chrg1.veValue[VCHRG1.iMPPT])]).c_str(), true);
+      mqttClt.publish(t_VED_C1_H20, String((atoi(VED_Chrg1.veValue[VCHRG1.iH20]) * 10)).c_str(), true);
+      mqttClt.publish(t_VED_C1_CSTAT, String(ConnStat_Decoder[VCHRG1.ConnStat]).c_str(), true);
+      mqttClt.publish(t_VED_C1_AvgPPV, String(VCHRG1.Avg_PPV, 0).c_str(), true);
+      delay(100);
     }
     else
     {
-      // No data received within timeout period!
-      VCHRG1.ConnStat = 2;
-      mqttClt.publish(t_VED_C1_CSTAT, String(VED_ConnStat_Decoder[VCHRG1.ConnStat]).c_str(), true);
+      // report (broken) connection state
+      mqttClt.publish(t_VED_C1_CSTAT, String(ConnStat_Decoder[VCHRG1.ConnStat]).c_str(), true);
     }
 
     // VE.Direct SmartShunt
-    if ((UptimeSeconds - VSS.lastUpdate) < VED_TIMEOUT)
+    if (VSS.ConnStat <= 1)
     {
-      if (VSS.lastUpdate >= VSS.lastPublish)
-      {
-        // New data available to publish
-        mqttClt.publish(t_VED_SH_V, String(VSS.V, 2).c_str(), true);
-        mqttClt.publish(t_VED_SH_I, String(VSS.I, 1).c_str(), true);
-        mqttClt.publish(t_VED_SH_P, String(VSS.P).c_str(), true);
-        mqttClt.publish(t_VED_SH_CE, String(VSS.CE, 1).c_str(), true);
-        mqttClt.publish(t_VED_SH_SOC, String(VSS.SOC, 0).c_str(), true);
-        mqttClt.publish(t_VED_SH_TTG, String(VSS.TTG).c_str(), true);
-        mqttClt.publish(t_VED_SH_ALARM, String(VED_Shnt.veValue[VSS.iALARM]).c_str(), true);
-        mqttClt.publish(t_VED_SH_AR, String(VED_Shnt.veValue[VSS.iAR]).c_str(), true);
-        mqttClt.publish(t_VED_SH_CSTAT, String(VED_ConnStat_Decoder[VSS.ConnStat]).c_str(), true);
-        // Data published, connection OK
-        VSS.ConnStat = 1;
-        VSS.lastPublish = UptimeSeconds;
-      }
+      mqttClt.publish(t_VED_SH_V, String(VSS.V, 2).c_str(), true);
+      mqttClt.publish(t_VED_SH_I, String(VSS.I, 1).c_str(), true);
+      mqttClt.publish(t_VED_SH_P, String(VSS.P).c_str(), true);
+      mqttClt.publish(t_VED_SH_CE, String(VSS.CE, 1).c_str(), true);
+      mqttClt.publish(t_VED_SH_SOC, String(VSS.SOC, 0).c_str(), true);
+      mqttClt.publish(t_VED_SH_TTG, String(VSS.TTG).c_str(), true);
+      mqttClt.publish(t_VED_SH_ALARM, String(VED_Shnt.veValue[VSS.iALARM]).c_str(), true);
+      mqttClt.publish(t_VED_SH_AR, String(VED_Shnt.veValue[VSS.iAR]).c_str(), true);
+      mqttClt.publish(t_VED_SH_CSTAT, String(ConnStat_Decoder[VSS.ConnStat]).c_str(), true);
     }
     else
     {
-      // No data received within timeout period!
-      VSS.ConnStat = 2;
-      mqttClt.publish(t_VED_SH_CSTAT, String(VED_ConnStat_Decoder[VSS.ConnStat]).c_str(), true);
+      // report (broken) connection state
+      mqttClt.publish(t_VED_SH_CSTAT, String(ConnStat_Decoder[VSS.ConnStat]).c_str(), true);
     }
 
     // Add some more delay for WiFi processing
@@ -414,17 +473,26 @@ void user_loop()
   //
   // Load Controller (SSR1)
   //
-  // If CSOC has reached the configured charge limit, enable load
+  // If SOC has reached the configured charge limit, enable load
   if (!Ctrl_SSR1_autoSetState && VSS.SOC >= ENABLE_LOAD_SOC)
   {
     Ctrl_SSR1 = 1;
     Ctrl_SSR1_autoSetState = true;
+    mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_SoC:" + String(VSS.SOC, 0)).c_str(), true);
   }
   // if we have a really sunny day, enable load at the configured HIGH_PV limits
   else if (!Ctrl_SSR1_autoSetState && VCHRG1.Avg_PPV >= HIGH_PV_AVG_PWR && VSS.SOC >= HIGH_PV_EN_LOAD_SOC)
   {
     Ctrl_SSR1 = 1;
     Ctrl_SSR1_autoSetState = true;
+    mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+  }
+  // if firmware has just started, enable load when SOC is at least BOOT_EN_LOAD_SOC
+  else if (!Ctrl_SSR1_autoSetState && FirstLoop && VSS.SOC >= BOOT_EN_LOAD_SOC)
+  {
+    Ctrl_SSR1 = 1;
+    Ctrl_SSR1_autoSetState = true;
+    mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
   }
 
   // Disable SSR1 when CSOC_DISABLE_LOAD is reached
@@ -433,37 +501,32 @@ void user_loop()
   {
     Ctrl_SSR1 = 0;
     Ctrl_SSR1_autoSetState = false;
+    mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_SoC:" + String(VSS.SOC, 0)).c_str(), true);
   }
 
   //
   // Active Balancer Controller (SSR2)
   //
-  if (Ctrl_SSR2_autoSetState)
+  if (Ctrl_SSR2_actState)
   {
     // Balancer is active
-    // If balancer is running for at least BAL_MIN_ON_DUR..
-    // Note: this check is always true if the Balancer
-    // has been manually enabled through MQTT, so we don't bother about this special case.
-    if ((UptimeSeconds - LastBalancerEnable) > BAL_MIN_ON_DUR)
+    // ..check if any cell is below BAL_OFF_CELLV
+    for (int i = 0; i < bms.get.numberOfCells; i++)
     {
-      // ..check if any cell is below BAL_OFF_CELLV
-      for (int i = 0; i < bms.get.numberOfCells; i++)
+      if (bms.get.cellVmV[i] < BAL_OFF_CELLV)
       {
-        if (bms.get.cellVmV[i] < BAL_OFF_CELLV)
-        {
-          // Low cell voltage threshold reached, disable Balancer
-          Ctrl_SSR2 = 0;
-          Ctrl_SSR2_autoSetState = false;
-          break;
-        }
+        // Low cell voltage threshold reached, disable Balancer
+        Ctrl_SSR2 = 0;
+        mqttClt.publish(t_Ctrl_StatT, String("SSR2_OFF_C" + String((i + 1)) + "_Vlow").c_str(), true);
+        break;
       }
     }
   }
   else
   {
     // Balancer is inactive
-    // If 1hr Power average is above threshold..
-    if (VCHRG1.Avg_PPV > BAL_ON_MIN_PWRAVG)
+    // If voltage difference is too high
+    if (bms.get.cellDiff > BAL_ON_CELLDIFF)
     {
       // ..check if any cell is above BAL_ON_CELLV
       for (int i = 0; i < bms.get.numberOfCells; i++)
@@ -472,9 +535,7 @@ void user_loop()
         {
           // High cell voltage threshold reached, enable Balancer
           Ctrl_SSR2 = 1;
-          Ctrl_SSR2_autoSetState = true;
-          // remember when we've enabled the Balancer
-          LastBalancerEnable = UptimeSeconds;
+          mqttClt.publish(t_Ctrl_StatT, String("SSR2_ON_C" + String((i + 1)) + "_Vhi").c_str(), true);
           // end loop, one cell above threshold is enough
           break;
         }
@@ -538,6 +599,7 @@ void user_loop()
     // desired state set, reset to "do not change"
     Ctrl_SSR1 = 2;
     mqttClt.publish(t_Ctrl_SSR1, String("dnc").c_str(), true);
+    // and publish active state immediately for better responsiveness in UI
     mqttClt.publish(t_Ctrl_actSSR1, String(Bool_Decoder[(int)Ctrl_SSR1_actState]).c_str(), true);
   }
 

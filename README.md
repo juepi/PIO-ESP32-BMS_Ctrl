@@ -44,3 +44,10 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 ## v2.0.0
 - Initial Commit, removed overhead from v1
 - Improved handling of SSRs (manual switching through MQTT)
+
+## v2.0.1
+- Added condition to enable balancer on large cell voltage diff
+- Removed condition to enable balancer on PV power threshold
+- removed balancer "minimum ON duration" timer
+- cleaned up serial connection state handling
+- added more textual output to `CtrlStatTXT` topic; now publishes info on every action the controller takes (like enable/disable load or balancer)
