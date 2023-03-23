@@ -18,7 +18,7 @@ To configure the firmware for your needs, see files `user_setup.h` and `mqtt_ota
 
 ## Status
 What you are looking at here is the **second major release** of this firmware. If you want to see how it all started or you're interested in the problems I've encountered up to this point, take a look at the [final v1 release readme](https://github.com/juepi/PIO-ESP32-BMS_Ctrl/tree/v1.3.0).  
-The hardware part is still missing, but as i'm looking forward of finishing a "large" 2.4kWh 8S LFP battery, I'll need to work on this in the forseeable future.
+The hardware part is also finished now, see [KiCad folder](https://github.com/juepi/PIO-ESP32-BMS_Ctrl/KiCad).
 
 ## Safety Guide
 Keep in mind that you are working with potentially dangerous currents depending on the hardware you use. Take any precautions necessary!
@@ -51,3 +51,10 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - removed balancer "minimum ON duration" timer
 - cleaned up serial connection state handling
 - added more textual output to `CtrlStatTXT` topic; now publishes info on every action the controller takes (like enable/disable load or balancer)
+
+## v2.0.2
+- MQTT topic `Daly_dV` now reports mV
+- Sending int instead of float  to MQTT topics for Daly temperature and SOC
+- Added error detection for VE.Direct data readouts (SOC)
+- Added some currently unused pin defines to match KiCad schematics
+- Added additional plausibility check for SoC data from SmartShunt

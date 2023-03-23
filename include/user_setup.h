@@ -45,6 +45,13 @@ extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
 //
 #define SSR1 5 // Battery Load Switch
 #define SSR2 3 // Active Balancer Enable
+#define SSR3 6 // unused - defined to match KiCad board
+#define SSR4 7 // unused - defined to match KiCad board
+
+//
+// OneWire Bus
+//
+#define OWDATA 38 // unused - defined to match KiCad board
 
 //
 // Daly BMS Settings
@@ -59,9 +66,9 @@ extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
 //
 // Load settings (SSR1)
 //
-#define ENABLE_LOAD_SOC 90     // SOC at which to enable the load (SSR1)
+#define ENABLE_LOAD_SOC 80     // SOC at which to enable the load (SSR1)
 #define DISABLE_LOAD_SOC 10    // SOC at which load will be disconnected
-#define HIGH_PV_AVG_PWR 35     // If the average charging power is higher than this..
+#define HIGH_PV_AVG_PWR 20     // If the average charging power is higher than this..
 #define HIGH_PV_EN_LOAD_SOC 50 //.. enable the load at an earlier SOC to avoid wasting PV energy
 #define BOOT_EN_LOAD_SOC 30    // If SOC is >= this value, load will be enabled at firmware startup
 
@@ -105,6 +112,10 @@ extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
 // SmartShunt 500 settings
 #define VED_SHNT_RX 35 // RX for SoftwareSerial
 #define VED_SHNT_TX 34 // TX for SoftwareSerial (unused)
+
+// Readout error detection
+#define VSS_MAX_SOC_DIFF 5 // max. allowed diff of SOC value between 2 readouts (larger diff -> new value ignored)
+
 // Array element indexes of VED_Shnt.veValue which will be sent to the MQTT broker (ATTN: valid for SmartShunt 500 with firmware 4.12)
 // See Victron Documentation: https://www.victronenergy.com/support-and-downloads/technical-information# --> VE.Direct protocol
 // ATTN: This DOES NOT WORK with the SmartShunt! The data in .veName and .veValue arrays are in different order nearly every ESP boot

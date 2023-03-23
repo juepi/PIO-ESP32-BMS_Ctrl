@@ -244,7 +244,25 @@ void user_loop()
       {
         if ((atoi(VED_Shnt.veValue[VSS.iSOC]) >= 0) && (atoi(VED_Shnt.veValue[VSS.iSOC]) <= 1000))
         {
-          VSS.SOC = atof(VED_Shnt.veValue[VSS.iSOC]) / 10;
+          if (FirstLoop)
+          {
+            // we have to assume the first readout is correct
+            VSS.SOC = atof(VED_Shnt.veValue[VSS.iSOC]) / 10;
+          }
+          else
+          {
+            // Additional plausibility check for new SOC
+            if (abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC*10) > VSS_MAX_SOC_DIFF)
+            {
+              // Unplausible increase or decrease of SOC - discard data
+              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discarded:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), true);
+            }
+            else
+            {
+              // new SOC seems ok
+              VSS.SOC = atof(VED_Shnt.veValue[VSS.iSOC]) / 10;
+            }
+          }
         }
       }
       // Battery TTG (time-to-empty)
@@ -382,13 +400,13 @@ void user_loop()
         mqttClt.publish(MqttTopStr.c_str(), String((bms.get.cellVmV[i] / 1000), 3).c_str(), true);
       }
       // send any other more or less useful stuff
-      mqttClt.publish(t_DSOC, String(bms.get.packSOC, 1).c_str(), true);
+      mqttClt.publish(t_DSOC, String(bms.get.packSOC, 0).c_str(), true);
       mqttClt.publish(t_DV, String(bms.get.packVoltage, 2).c_str(), true);
-      mqttClt.publish(t_DdV, String((bms.get.cellDiff / 1000), 3).c_str(), true);
+      mqttClt.publish(t_DdV, String(bms.get.cellDiff,0).c_str(), true);
       mqttClt.publish(t_DI, String(bms.get.packCurrent, 2).c_str(), true);
       mqttClt.publish(t_DLSw, String(Bool_Decoder[(int)bms.get.disChargeFetState]).c_str(), true);
       mqttClt.publish(t_DCSw, String(Bool_Decoder[(int)bms.get.chargeFetState]).c_str(), true);
-      mqttClt.publish(t_DTemp, String(bms.get.tempAverage).c_str(), true);
+      mqttClt.publish(t_DTemp, String(bms.get.tempAverage,0).c_str(), true);
       mqttClt.publish(t_D_CSTAT, String(ConnStat_Decoder[BMSConnStat]).c_str(), true);
       // Add some delay for WiFi processing
       delay(100);
