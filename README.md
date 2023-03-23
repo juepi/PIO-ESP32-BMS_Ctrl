@@ -18,7 +18,7 @@ To configure the firmware for your needs, see files `user_setup.h` and `mqtt_ota
 
 ## Status
 What you are looking at here is the **second major release** of this firmware. If you want to see how it all started or you're interested in the problems I've encountered up to this point, take a look at the [final v1 release readme](https://github.com/juepi/PIO-ESP32-BMS_Ctrl/tree/v1.3.0).  
-The hardware part is also finished now, see [KiCad folder](https://github.com/juepi/PIO-ESP32-BMS_Ctrl/KiCad).
+The hardware part is also finished now, see [KiCad folder](https://github.com/juepi/PIO-ESP32-BMS_Ctrl/tree/main/KiCad).
 
 ## Safety Guide
 Keep in mind that you are working with potentially dangerous currents depending on the hardware you use. Take any precautions necessary!
