@@ -513,8 +513,8 @@ void user_loop()
     mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
   }
 
-  // Disable SSR1 when CSOC_DISABLE_LOAD is reached
-  // This must be done also if the load was enabled manually, so use effective SSR1_actState
+  // Disable SSR1 when DISABLE_LOAD_SOC is reached
+  // This must also trigger if the load was enabled manually, so use effective SSR1_actState
   if (Ctrl_SSR1_actState && VSS.SOC <= DISABLE_LOAD_SOC)
   {
     Ctrl_SSR1 = 0;

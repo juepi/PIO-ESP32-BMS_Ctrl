@@ -75,8 +75,8 @@ extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
 //
 // Active Balancer Settings (SSR2)
 //
-#define BAL_ON_CELLV 3400  // ENABLE balancer if a cell has reached this voltage level [mV]
-#define BAL_ON_CELLDIFF 30 // If cell voltage difference is higher than this [mV], enable balancer
+#define BAL_ON_CELLDIFF 30 // If cell voltage difference is higher than this [mV] AND
+#define BAL_ON_CELLV 3400  // ..if a cell has reached this voltage level [mV], enable the balancer
 #define BAL_OFF_CELLV 3300 // DISABLE balancer if a cell has fallen below this voltage level [mV]
 
 //
