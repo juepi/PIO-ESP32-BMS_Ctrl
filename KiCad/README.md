@@ -13,3 +13,6 @@ Gerber files are prepared for PCB manufacturing at [jlcpcb.com](https://jlcpcb.c
 
 ## v1.1
 - Initial commit with some improvements to allow more current on BMS-Controller board (SSR1, SSR3 and SSR4)
+
+## v1.2
+- Fixed too narrow GND connections for screw terminals; updated Gerber data
