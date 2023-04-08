@@ -16,6 +16,12 @@ VeDirectFrameHandler VED_Chrg1;
 SoftwareSerial VEDSer_Shnt;
 VeDirectFrameHandler VED_Shnt;
 
+// Setup OneWire Temperature Sensor(s)
+#ifdef ENA_ONEWIRE // Optional OneWire support
+OneWire oneWire(OWDATA);
+DallasTemperature OWtemp(&oneWire);
+#endif
+
 // Global variable declarations
 // for MQTT topics
 int Ctrl_DalyChSw = 2;
@@ -68,6 +74,11 @@ void user_setup()
   // We don't need TX
   VEDSer_Shnt.enableIntTx(false);
   VEDSer_Shnt.flush();
+
+#ifdef ENA_ONEWIRE // Optional OneWire support
+  OWtemp.begin();
+  OWtemp.setResolution(OWRES);
+#endif
 }
 
 /*
@@ -97,7 +108,7 @@ void user_loop()
   static uint32_t MQTTLastDataPublish = 0;
   static const char *Bool_Decoder[] = {"off", "on"};
   // Connection Status decoding (for all serial connections)
-  static const char *ConnStat_Decoder[] = {"Startup", "Ok", "Timeout", "Read_Fail"};
+  static const char *ConnStat_Decoder[] = {"Startup", "Ok", "Timeout", "Read_Fail", "Init_Fail"};
   // VE.Direct Charger
   // Int to Text conversion for Charger data
   static short UpdAvgArrIndx = 0; // 1hr average PPV calculation
@@ -108,6 +119,12 @@ void user_loop()
   // VE.Direct SmartShunt
   static char VED_SS_Labels[9][6] = {"PID", "V", "I", "P", "CE", "SOC", "TTG", "ALARM", "AR"};
   static VED_Shunt_data VSS;
+#ifdef ENA_ONEWIRE // Optional OneWire support
+  // Array for OneWire Temperature Sensor(s) addresses
+  static float OW_SensorData[NUM_OWTEMP] = {0};
+  static int OWConnStat = 0;
+  static uint32_t OWLastDataUpdate = 0;
+#endif
 
   //
   // Start the action
@@ -252,7 +269,7 @@ void user_loop()
           else
           {
             // Additional plausibility check for new SOC
-            if (abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC*10) > VSS_MAX_SOC_DIFF)
+            if (abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC * 10) > VSS_MAX_SOC_DIFF)
             {
               // Unplausible increase or decrease of SOC - discard data
               mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discarded:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), true);
@@ -345,6 +362,53 @@ void user_loop()
   }
 
   //
+  // Gather data from OneWire sensors
+#ifdef ENA_ONEWIRE // Optional OneWire support
+  if ((UptimeSeconds - OWLastDataUpdate) >= OW_UPDATE_INTERVAL || FirstLoop)
+  {
+    OWtemp.requestTemperatures(); // blocking call
+    if (FirstLoop)
+    {
+      // Check if the correct amount of sensors were found
+      if (!OWtemp.getDeviceCount() == NUM_OWTEMP)
+      {
+        // incorrect amount of sensors found
+        mqttClt.publish(t_Ctrl_StatT, String("OW_Init_numSens_Fail:" + String(OWtemp.getDeviceCount())).c_str(), true);
+        OWConnStat = 4;
+      }
+    }
+    // Get OW temperatures
+    if (!OWConnStat == 4)
+    {
+      for (int i = 0; i < NUM_OWTEMP; i++)
+      {
+        OW_SensorData[i] = OWtemp.getTempCByIndex(i);
+        if (OW_SensorData[i] == DEVICE_DISCONNECTED_C || OW_SensorData[i] == DEVICE_FAULT_OPEN_C)
+        {
+          // sensor fault - end this read cycle
+          OWConnStat = 3;
+          break;
+        }
+        else
+        {
+          OWConnStat = 1;
+        }
+      }
+      if (OWConnStat <= 1)
+      {
+        OWLastDataUpdate = UptimeSeconds;
+      }
+      else
+      {
+        if ((UptimeSeconds - OWLastDataUpdate) > OW_TIMEOUT)
+          // Connection timed out
+          OWConnStat = 2;
+      }
+    }
+  }
+#endif // ENA_ONEWIRE
+
+  //
   // Update 1hr power average every 6 minutes
   //
   if ((UptimeSeconds - LastAvgCalc) >= 360 || FirstLoop)
@@ -402,11 +466,11 @@ void user_loop()
       // send any other more or less useful stuff
       mqttClt.publish(t_DSOC, String(bms.get.packSOC, 0).c_str(), true);
       mqttClt.publish(t_DV, String(bms.get.packVoltage, 2).c_str(), true);
-      mqttClt.publish(t_DdV, String(bms.get.cellDiff,0).c_str(), true);
+      mqttClt.publish(t_DdV, String(bms.get.cellDiff, 0).c_str(), true);
       mqttClt.publish(t_DI, String(bms.get.packCurrent, 2).c_str(), true);
       mqttClt.publish(t_DLSw, String(Bool_Decoder[(int)bms.get.disChargeFetState]).c_str(), true);
       mqttClt.publish(t_DCSw, String(Bool_Decoder[(int)bms.get.chargeFetState]).c_str(), true);
-      mqttClt.publish(t_DTemp, String(bms.get.tempAverage,0).c_str(), true);
+      mqttClt.publish(t_DTemp, String(bms.get.tempAverage, 0).c_str(), true);
       mqttClt.publish(t_D_CSTAT, String(ConnStat_Decoder[BMSConnStat]).c_str(), true);
       // Add some delay for WiFi processing
       delay(100);
@@ -483,6 +547,25 @@ void user_loop()
       // report (broken) connection state
       mqttClt.publish(t_VED_SH_CSTAT, String(ConnStat_Decoder[VSS.ConnStat]).c_str(), true);
     }
+
+#ifdef ENA_ONEWIRE // Optional OneWire support
+    // OneWire Sensors
+    if (OWConnStat <= 1)
+    {
+      // Send sensor data
+      for (int i = 0; i < NUM_OWTEMP; i++)
+      {
+        int j = i + 1;
+        String MqttTopStr = String(t_OW_TEMP_Templ) + String(j);
+        mqttClt.publish(MqttTopStr.c_str(), String(OW_SensorData[i], 0).c_str(), true);
+      }
+    }
+    else
+    {
+      // report (broken) connection state
+      mqttClt.publish(t_OW_CSTAT, String(ConnStat_Decoder[OWConnStat]).c_str(), true);
+    }
+#endif // ENA_ONEWIRE
 
     // Add some more delay for WiFi processing
     delay(100);

@@ -37,6 +37,7 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 # Bugs and Workarounds
 - Both data frame arrays of the VeDirectFrameHandler (Charger and SmartShunt) keep increasing over time due to transmission/decoding errors (I assume!) leading to new (non-existing) data labels/values that are added to the arrays. VeDirectFrameHandler maxes out at 40 Labels, so this should not lead to any problems (in terms of buffer overflow), not sure how this is possible however as every frame has a checksum. Due to this problem, also garbage values will be decoded every now and then, so I've added additional validity checks when new data was received (especially SoC).
 - VeDirectFrameHandler data from the SmartShunt is "sorted" randomly in the veValue/veName arrays, which breaks the "hardcoded" index numbers I used to get the values from the data arrays. I've fixed this by adding a function to the library that allows you to fetch the arrays index number from a given veName tag. I've not encountered this behavior with the SmartSolar charger yet.
+- OneWire DS18B20 not working (both powered and parasitic mode tested), it seems the library is unable to detect the sensor.
 
 
 # Version History
@@ -58,3 +59,10 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Added error detection for VE.Direct data readouts (SOC)
 - Added some currently unused pin defines to match KiCad schematics
 - Added additional plausibility check for SoC data from SmartShunt
+
+## v2.0.3
+- Added optional OneWire support for DS18B20 temperature sensors (enable in `platformio.ini`) - doesn't work yet
+  
+
+Have fun,  
+Juergen

@@ -14,6 +14,10 @@
 #include <daly-bms-uart.h>
 #include <VeDirectFrameHandler.h>
 #include <SoftwareSerial.h>
+#ifdef ENA_ONEWIRE // Optional OneWire support
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#endif
 
 //
 // Declare user_setup, user_loop and custom global functions
@@ -29,6 +33,10 @@ extern SoftwareSerial VEDSer_Chrg1;
 extern VeDirectFrameHandler VED_Chrg1;
 extern SoftwareSerial VEDSer_Shnt;
 extern VeDirectFrameHandler VED_Shnt;
+#ifdef ENA_ONEWIRE // Optional OneWire support
+extern OneWire oneWire;
+extern DallasTemperature OWtemp;
+#endif
 
 //
 // Global user vars
@@ -51,7 +59,16 @@ extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
 //
 // OneWire Bus
 //
-#define OWDATA 38 // unused - defined to match KiCad board
+#ifdef ENA_ONEWIRE           // Optional OneWire support - doesn't work yet (doesn't detect sensor)!
+#define OWDATA 39            // GPIO for OneWire communication
+#define OWRES 9              // Use 9 bits resolution (0.5°C)
+#define NUM_OWTEMP 1         // Amount of connected DS18B20 sensors
+#define OW_UPDATE_INTERVAL 5 // sensor readout interval in seconds
+#define OW_TIMEOUT 60        // If no data update for all sensors occur within this timespan (seconds), connection to OneWire considered dead
+// MQTT Topics for published data
+#define t_OW_TEMP_Templ TOPTREE "OW_T" // will be extended with sensor numbers starting at 1
+#define t_OW_CSTAT TOPTREE "OW_CSTAT"
+#endif // ENA_ONEWIRE
 
 //
 // Daly BMS Settings
