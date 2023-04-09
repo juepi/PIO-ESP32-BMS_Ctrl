@@ -370,15 +370,14 @@ void user_loop()
     if (FirstLoop)
     {
       // Check if the correct amount of sensors were found
-      if (!OWtemp.getDeviceCount() == NUM_OWTEMP)
+      if (OWtemp.getDeviceCount() != NUM_OWTEMP)
       {
         // incorrect amount of sensors found
-        mqttClt.publish(t_Ctrl_StatT, String("OW_Init_numSens_Fail:" + String(OWtemp.getDeviceCount())).c_str(), true);
         OWConnStat = 4;
       }
     }
     // Get OW temperatures
-    if (!OWConnStat == 4)
+    if (OWConnStat <= 3)
     {
       for (int i = 0; i < NUM_OWTEMP; i++)
       {
@@ -394,16 +393,7 @@ void user_loop()
           OWConnStat = 1;
         }
       }
-      if (OWConnStat <= 1)
-      {
-        OWLastDataUpdate = UptimeSeconds;
-      }
-      else
-      {
-        if ((UptimeSeconds - OWLastDataUpdate) > OW_TIMEOUT)
-          // Connection timed out
-          OWConnStat = 2;
-      }
+      OWLastDataUpdate = UptimeSeconds;
     }
   }
 #endif // ENA_ONEWIRE
@@ -559,6 +549,7 @@ void user_loop()
         String MqttTopStr = String(t_OW_TEMP_Templ) + String(j);
         mqttClt.publish(MqttTopStr.c_str(), String(OW_SensorData[i], 0).c_str(), true);
       }
+      mqttClt.publish(t_OW_CSTAT, String(ConnStat_Decoder[OWConnStat]).c_str(), true);
     }
     else
     {

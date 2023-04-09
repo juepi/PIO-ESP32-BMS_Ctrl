@@ -41,7 +41,7 @@ extern DallasTemperature OWtemp;
 //
 // Global user vars
 //
-// Set by MQTT topics
+// Modified by MQTT subscriptions
 extern int Ctrl_DalyChSw;   // Desired Daly MOSFET switch states, either on, off or dnc (do not change)
 extern int Ctrl_DalyLoadSw; // if set to on/off, will be set ONCE by the ESP, then reset to dnc
 extern int Ctrl_SSR1;       // SSR1 switch state (on/off/dnc)
@@ -60,9 +60,9 @@ extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
 // OneWire Bus
 //
 #ifdef ENA_ONEWIRE           // Optional OneWire support - doesn't work yet (doesn't detect sensor)!
-#define OWDATA 39            // GPIO for OneWire communication
+#define OWDATA 4             // GPIO for OneWire communication (Note: high GPIOs >36 do not work!)
 #define OWRES 9              // Use 9 bits resolution (0.5°C)
-#define NUM_OWTEMP 1         // Amount of connected DS18B20 sensors
+#define NUM_OWTEMP 2         // Amount of connected DS18B20 sensors
 #define OW_UPDATE_INTERVAL 5 // sensor readout interval in seconds
 #define OW_TIMEOUT 60        // If no data update for all sensors occur within this timespan (seconds), connection to OneWire considered dead
 // MQTT Topics for published data

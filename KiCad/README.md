@@ -20,3 +20,6 @@ Gerber files are prepared for PCB manufacturing at [jlcpcb.com](https://jlcpcb.c
 - maximized spacing between 2 paralleled MOSFETs to allow mounting a TO-220 heat sink
 - Fixed too narrow GND connections for screw terminals; updated Gerber data
 - Added silkscreen text to explain installation direction of ESP module
+
+## v1.3
+- Re-routed OneWire pin to GPIO4 (tested ok with 2 sensors)
