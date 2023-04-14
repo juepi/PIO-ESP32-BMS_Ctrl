@@ -29,10 +29,10 @@ RTC_DATA_ATTR int SaveMe = 0;
 #endif
 
 // Setup WiFi instance
-WiFiClient WIFI_CLTNAME;
+WiFiClient WiFiClt;
 
 // Setup PubSub Client instance
-PubSubClient mqttClt(MQTT_BROKER, 1883, MqttCallback, WIFI_CLTNAME);
+PubSubClient mqttClt(MQTT_BROKER, 1883, MqttCallback, WiFiClt);
 
 void hardware_setup()
 {

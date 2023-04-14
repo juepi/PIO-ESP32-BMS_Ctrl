@@ -8,7 +8,7 @@
 #include "macro-handling.h"
 
 // WiFi CLient object name
-#define WIFI_CLTNAME CLTNAME
+#define WiFiClt CLTNAME
 
 // Set WiFi Sleep Mode
 // ====================

@@ -2,7 +2,7 @@
 This project is intended to be used as an WiFi/MQTT interface to the [Daly Smart BMS Systems](https://www.aliexpress.com/store/4165007) and Victron VE.Direct devices based on my PlatformIO ESP32 Template.  
 Primarily, the code reads status data from the Daly BMS, Victron VE.Direct PV charger and SmartShunt and sends it to your MQTT broker at a configurable interval. It automatically switches the load-SSR on if the batteries are fully charged (2 configurable SOC limits) and off if the batteries are drained (also configureable SOC limit). Load-SSR can also be switched manually by setting the corresponding MQTT topic to `on` or `off`. The primary source for the battery SOC is the **Victron SmartShunt**.  
 Last but not least, the firmware also allows you to handle an external active balancer through an additional SSR as recommended by [Andy](https://www.youtube.com/watch?v=yPmwrPOwC3g). However, i have added a second condition beside the 3.4V cell voltage: we're only enabling the active balancer at a configurable mimimum solar power threshold. This ensures that balancing only kicks in when the battery is reasonably charging.  
-To configure the firmware for your needs, see files `user_setup.h` and `mqtt_ota_config.h`, also see [**PlatformIO ESP32 Template**](https://github.com/juepi/PIO-ESP32-Template) readme (WiFi setup etc.).
+To configure the firmware for your needs, see files `user-config.h` and `mqtt_ota_config.h`, also see [**PlatformIO ESP32 Template**](https://github.com/juepi/PIO-ESP32-Template) readme (WiFi setup etc.).
 
 ## Mandatory Hardware Requirements
 - 1x [WEMOS S2 Mini](https://www.wemos.cc/en/latest/s2/s2_mini.html) or any other ESP32 should work (adopt `platformio.ini`to your needs)
@@ -65,6 +65,24 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 
 ## v2.0.4
 - Moved OneWire GPIO to IO4, this one works
+
+## v2.1.0
+- Fixed missing VeDirectFrameHandler lib (**see Note below!**), which i've trashed somehow as it seems..; now loaded through `platformio.ini`
+- Fixed Hostname limitation of ESP32-Template
+- Renamed `user_setup.h` to more suitable `user-config.h`
+
+
+# NOTE on missing VeDirectFrameHandler library
+
+I somehow managed to not to include the VeDirectFrameHandler library into previous commits as it was intended. **This affects all versions since adding VE.Direct support in v1.2.0!**  
+If you want to build an older release, you can easily fix this by adding my [fork of VeDirectFrameHandler](https://github.com/juepi/VeDirectFrameHandler) into the library section of `platformio.ini`:
+
+```
+lib_deps =
+    https://github.com/juepi/VeDirectFrameHandler
+    ...
+```
+
 
 Have fun,  
 Juergen

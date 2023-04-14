@@ -2,8 +2,8 @@
  *   ESP32 Template
  *   User specific defines and Function declarations
  */
-#ifndef USER_SETUP_H
-#define USER_SETUP_H
+#ifndef USER_CONFIG_H
+#define USER_CONFIG_H
 
 #include "mqtt-ota-config.h"
 
@@ -227,4 +227,4 @@ struct VED_Charger_data
     int ConnStat = 0;         // Connection Status
 };
 
-#endif // USER_SETUP_H
+#endif // USER_CONFIG_H
