@@ -46,14 +46,15 @@ extern int Ctrl_DalyChSw;   // Desired Daly MOSFET switch states, either on, off
 extern int Ctrl_DalyLoadSw; // if set to on/off, will be set ONCE by the ESP, then reset to dnc
 extern int Ctrl_SSR1;       // SSR1 switch state (on/off/dnc)
 extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
+extern int Ctrl_SSR3;       // SSR3 switch state (on/off/dnc)
 
 //
 // User SSR
 // HIGH level -> SSR is switched ON
 //
-#define SSR1 5 // Battery Load Switch
+#define SSR1 5 // Battery Load Switch 1
 #define SSR2 3 // Active Balancer Enable
-#define SSR3 6 // unused - defined to match KiCad board
+#define SSR3 6 // Battery Load Switch 2
 #define SSR4 7 // unused - defined to match KiCad board
 
 //
@@ -84,7 +85,7 @@ extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
 // Load settings (SSR1)
 //
 #define ENABLE_LOAD_SOC 80     // SOC at which to enable the load (SSR1)
-#define DISABLE_LOAD_SOC 10    // SOC at which load will be disconnected
+#define DISABLE_LOAD_SOC 10    // SOC at which all loads will be disconnected (SSR1, SSR3)
 #define HIGH_PV_AVG_PWR 20     // If the average charging power is higher than this..
 #define HIGH_PV_EN_LOAD_SOC 50 //.. enable the load at an earlier SOC to avoid wasting PV energy
 #define BOOT_EN_LOAD_SOC 30    // If SOC is >= this value, load will be enabled at firmware startup
@@ -180,11 +181,13 @@ extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
 #define t_Ctrl_StatU TOPTREE "CtrlStatUpt"    // ESP Controller uptime provided through MQTT
 #define t_Ctrl_actSSR1 TOPTREE "Ctrl_actSSR1" // Actual state of SSR1 GPIO (on/off)
 #define t_Ctrl_actSSR2 TOPTREE "Ctrl_actSSR2" // Actual state of SSR2 GPIO (on/off)
+#define t_Ctrl_actSSR3 TOPTREE "Ctrl_actSSR3" // Actual state of SSR2 GPIO (on/off)
 // Subscriptions
 #define t_Ctrl_CSw TOPTREE "Ctrl_CSw"   // User-desired state of Daly charging MOSFETs (on/off or dnc for "do not change")
 #define t_Ctrl_LSw TOPTREE "Ctrl_LSw"   // User-desired state of Daly discharging MOSFETs (on/off or dnc)
 #define t_Ctrl_SSR1 TOPTREE "Ctrl_SSR1" // User-desired state of SSR1 GPIO (on/off/dnc)
 #define t_Ctrl_SSR2 TOPTREE "Ctrl_SSR2" // User-desired state of SSR2 GPIO (on/off/dnc)
+#define t_Ctrl_SSR3 TOPTREE "Ctrl_SSR3" // User-desired state of SSR3 GPIO (on/off/dnc)
 
 //
 // Data structures
@@ -205,9 +208,9 @@ struct VED_Shunt_data
     int iTTG = 255;
     int iALARM = 255;
     int iAR = 255;
-    uint32_t lastUpdate = 0;  // to verify connection is active
-    uint32_t lastValidFr = 0; // last valid frame decoded (uptime)
-    int ConnStat = 0;         // Connection Status
+    uint32_t lastUpdate = 0;    // to verify connection is active
+    uint32_t lastDecodedFr = 0; // uptime of last decoded frame
+    int ConnStat = 0;           // Connection Status
 };
 
 struct VED_Charger_data
@@ -222,9 +225,9 @@ struct VED_Charger_data
     int iMPPT = i_CHRG_LBL_MPPT;
     int iERR = i_CHRG_LBL_ERR;
     int iH20 = i_CHRG_LBL_H20;
-    uint32_t lastUpdate = 0;  // to verify connection is active
-    uint32_t lastValidFr = 0; // last valid frame decoded (uptime)
-    int ConnStat = 0;         // Connection Status
+    uint32_t lastUpdate = 0;    // to verify connection is active
+    uint32_t lastDecodedFr = 0; // uptime of last decoded frame
+    int ConnStat = 0;           // Connection Status
 };
 
 #endif // USER_CONFIG_H

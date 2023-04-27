@@ -28,6 +28,7 @@ int Ctrl_DalyChSw = 2;
 int Ctrl_DalyLoadSw = 2;
 int Ctrl_SSR1 = 2;
 int Ctrl_SSR2 = 2;
+int Ctrl_SSR3 = 2;
 
 /*
  * User Setup Function
@@ -37,8 +38,12 @@ void user_setup()
 {
   pinMode(SSR1, OUTPUT);
   pinMode(SSR2, OUTPUT);
+  pinMode(SSR3, OUTPUT);
+  pinMode(SSR4, OUTPUT);
   digitalWrite(SSR1, LOW);
   digitalWrite(SSR2, LOW);
+  digitalWrite(SSR3, LOW);
+  digitalWrite(SSR4, LOW);
   bms.Init();
 
   VEDSer_Chrg1.begin(VED_BAUD, SWSERIAL_8N1, VED_CHRG1_RX, VED_CHRG1_TX, false, 512);
@@ -101,7 +106,8 @@ void user_loop()
   static unsigned long oldMillis = 0;
   // Load
   static bool Ctrl_SSR1_autoSetState = false; // desired state of automatic mode
-  static bool Ctrl_SSR1_actState = false;     // currently active state set on GPIO
+  static bool Ctrl_SSR1_actState = false;     // currently active state set on GPIO SSR1
+  static bool Ctrl_SSR3_actState = false;     // currently active state set on GPIO SSR3
   // Balancer
   static bool Ctrl_SSR2_actState = false; // currently active state set on GPIO
   // Other helpers
@@ -124,6 +130,8 @@ void user_loop()
   static float OW_SensorData[NUM_OWTEMP] = {0};
   static int OWConnStat = 0;
   static uint32_t OWLastDataUpdate = 0;
+  static uint32_t OWLastValidData = 0;
+  static bool OWReadOk = true;
 #endif
 
   //
@@ -142,69 +150,59 @@ void user_loop()
   {
     oldMillis = millis();
     UptimeSeconds++;
+#ifdef ONBOARD_LED
+    // Toggle LED every second
+    ToggleLed(LED, 1, 1);
+#endif
   }
 
   //
   // Decode available data from VE.Direct SoftwareSerials immediately
   //
+  // Handle VE.Direct SmartSolar Charger #1
   if (VEDSer_Chrg1.available())
   {
     while (VEDSer_Chrg1.available())
     {
       VED_Chrg1.rxData(VEDSer_Chrg1.read());
     }
-    if (VCHRG1.lastValidFr < VED_Chrg1.frameCounter)
+    if (VCHRG1.lastDecodedFr < VED_Chrg1.frameCounter)
     {
-      // new valid frame decoded from VeDirectFrameHandler
+      // new frame decoded from VeDirectFrameHandler
       VCHRG1.lastUpdate = UptimeSeconds;
-      VCHRG1.lastValidFr = VED_Chrg1.frameCounter;
-      // Connection OK
+      VCHRG1.lastDecodedFr = VED_Chrg1.frameCounter;
+      // assume connection OK
       VCHRG1.ConnStat = 1;
-      // Store new data in struct (only PPV needed here, anything else will just be copied out to MQTT topics)
+      // Store new data in struct (only PPV needed here, everything else will just be copied out to MQTT topics)
       VCHRG1.PPV = atoi(VED_Chrg1.veValue[VCHRG1.iPPV]);
-    }
-    else
-    {
-      if ((UptimeSeconds - VCHRG1.lastUpdate) > VED_TIMEOUT)
-      {
-        // Connection timed out (due to no valid data within VED_TIMEOUT)
-        VCHRG1.ConnStat = 2;
-      }
-      else
-      {
-        // invalid or incomplete frame received
-        // this happens during regular (non-blocking) operation of VeDirectFrameHandler, so set ConnStat to OK
-        VCHRG1.ConnStat = 1;
-      }
     }
     // grant time for background tasks
     delay(1);
   }
-  else
+
+  // Verify if connection to VE.Direct device is alive
+  if ((UptimeSeconds - VCHRG1.lastUpdate) > VED_TIMEOUT)
   {
-    if ((UptimeSeconds - VCHRG1.lastUpdate) > VED_TIMEOUT)
-    {
-      // Connection timed out (no data received at all within VED_TIMEOUT)
-      VCHRG1.ConnStat = 2;
-    }
+    // Connection timed out (no valid data received within timeout period)
+    VCHRG1.ConnStat = 2;
   }
 
+  // Handle VE.Direct SmartShunt
   if (VEDSer_Shnt.available())
   {
     while (VEDSer_Shnt.available())
     {
       VED_Shnt.rxData(VEDSer_Shnt.read());
     }
-    if (VSS.lastValidFr < VED_Shnt.frameCounter)
+    if (VSS.lastDecodedFr < VED_Shnt.frameCounter)
     {
-      // new valid frame decoded from VeDirectFrameHandler
-      VSS.lastUpdate = UptimeSeconds;
-      VSS.lastValidFr = VED_Shnt.frameCounter;
-      // Connection OK
+      // new frame decoded from VeDirectFrameHandler
+      VSS.lastDecodedFr = VED_Shnt.frameCounter;
+      // assume connection OK
       VSS.ConnStat = 1;
 
       // Verify data and store in struct
-      // Battery Voltage
+      // Battery Voltage (in mV)
       if (VSS.iV == 255)
       {
         VSS.iV = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_V]);
@@ -216,7 +214,7 @@ void user_loop()
           VSS.V = atof(VED_Shnt.veValue[VSS.iV]) / 1000;
         }
       }
-      // Battery Current
+      // Battery Current (in mA)
       if (VSS.iI == 255)
       {
         VSS.iI = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_I]);
@@ -228,7 +226,7 @@ void user_loop()
           VSS.I = atof(VED_Shnt.veValue[VSS.iI]) / 1000;
         }
       }
-      // Battery Power
+      // Battery Power (in W)
       if (VSS.iP == 255)
       {
         VSS.iP = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_P]);
@@ -240,7 +238,7 @@ void user_loop()
           VSS.P = atoi(VED_Shnt.veValue[VSS.iP]);
         }
       }
-      // Consumed Energy
+      // Consumed Energy (in mAh)
       if (VSS.iCE == 255)
       {
         VSS.iCE = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_CE]);
@@ -272,7 +270,8 @@ void user_loop()
             if (abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC * 10) > VSS_MAX_SOC_DIFF)
             {
               // Unplausible increase or decrease of SOC - discard data
-              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discarded:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), true);
+              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard2:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), true);
+              VSS.ConnStat = 3;
             }
             else
             {
@@ -280,6 +279,12 @@ void user_loop()
               VSS.SOC = atof(VED_Shnt.veValue[VSS.iSOC]) / 10;
             }
           }
+        }
+        else
+        {
+          // Unplausible SOC decoded
+          mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard1:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), true);
+          VSS.ConnStat = 3;
         }
       }
       // Battery TTG (time-to-empty)
@@ -304,31 +309,22 @@ void user_loop()
       {
         VSS.iAR = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_AR]);
       }
-    }
-    else
-    {
-      if ((UptimeSeconds - VSS.lastUpdate) > VED_TIMEOUT)
+
+      // If connection state is still ok (no data verification error), increase lastUpdate
+      if (VSS.ConnStat == 1)
       {
-        // Connection timed out (due to no valid data within VED_TIMEOUT)
-        VSS.ConnStat = 2;
+        VSS.lastUpdate = UptimeSeconds;
       }
-      else
-      {
-        // invalid or incomplete frame received
-        // this happens during regular (non-blocking) operation of VeDirectFrameHandler, so set ConnStat to OK
-        VSS.ConnStat = 1;
-      }
-      // grant time for background tasks
-      delay(1);
     }
+    // grant time for background tasks
+    delay(1);
   }
-  else
+
+  // Verify if connection to VE.Direct device is alive
+  if ((UptimeSeconds - VSS.lastUpdate) > VED_TIMEOUT)
   {
-    if ((UptimeSeconds - VSS.lastUpdate) > VED_TIMEOUT)
-    {
-      // Connection timed out (no data received at all within VED_TIMEOUT)
-      VSS.ConnStat = 2;
-    }
+    // Connection timed out (no valid data received within timeout period)
+    VSS.ConnStat = 2;
   }
 
   //
@@ -363,34 +359,51 @@ void user_loop()
 
   //
   // Gather data from OneWire sensors
+  //
 #ifdef ENA_ONEWIRE // Optional OneWire support
   if ((UptimeSeconds - OWLastDataUpdate) >= OW_UPDATE_INTERVAL || FirstLoop)
   {
-    OWtemp.requestTemperatures(); // blocking call
     if (FirstLoop)
     {
       // Check if the correct amount of sensors were found
       if (OWtemp.getDeviceCount() != NUM_OWTEMP)
       {
         // incorrect amount of sensors found
+        // this is a permanent failure
         OWConnStat = 4;
       }
     }
     // Get OW temperatures
     if (OWConnStat <= 3)
     {
+      OWtemp.requestTemperatures(); // blocking call
+      OWReadOk = true;
       for (int i = 0; i < NUM_OWTEMP; i++)
       {
         OW_SensorData[i] = OWtemp.getTempCByIndex(i);
         if (OW_SensorData[i] == DEVICE_DISCONNECTED_C || OW_SensorData[i] == DEVICE_FAULT_OPEN_C)
         {
-          // sensor fault - end this read cycle
-          OWConnStat = 3;
+          // sensor read fault - end this read cycle
+          OWReadOk = false;
           break;
+        }
+      }
+      if (OWReadOk)
+      {
+        OWConnStat = 1;
+        OWLastValidData = UptimeSeconds;
+      }
+      else
+      {
+        if ((UptimeSeconds - OWLastValidData) > OW_TIMEOUT)
+        {
+          // Timeout limit reached
+          OWConnStat = 2;
         }
         else
         {
-          OWConnStat = 1;
+          // Not yet in timeout (readout failed)
+          OWConnStat = 3;
         }
       }
       OWLastDataUpdate = UptimeSeconds;
@@ -442,6 +455,7 @@ void user_loop()
     mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
     mqttClt.publish(t_Ctrl_actSSR1, String(Bool_Decoder[(int)Ctrl_SSR1_actState]).c_str(), true);
     mqttClt.publish(t_Ctrl_actSSR2, String(Bool_Decoder[(int)Ctrl_SSR2_actState]).c_str(), true);
+    mqttClt.publish(t_Ctrl_actSSR3, String(Bool_Decoder[(int)Ctrl_SSR3_actState]).c_str(), true);
 
     // Daly BMS
     if (BMSConnStat <= 1)
@@ -587,13 +601,17 @@ void user_loop()
     mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
   }
 
-  // Disable SSR1 when DISABLE_LOAD_SOC is reached
+  // Disable SSR1 + SSR3 when DISABLE_LOAD_SOC is reached
   // This must also trigger if the load was enabled manually, so use effective SSR1_actState
-  if (Ctrl_SSR1_actState && VSS.SOC <= DISABLE_LOAD_SOC)
+  // SAFETY: Disable loads when communication to VSS or Daly timed out
+  if (Ctrl_SSR1_actState && (VSS.SOC <= DISABLE_LOAD_SOC || VSS.ConnStat == 2 || BMSConnStat == 2))
   {
     Ctrl_SSR1 = 0;
     Ctrl_SSR1_autoSetState = false;
     mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+    // TODO: fully integrate SSR3 / rework whole load handling
+    // also disable SSR3 at low SOC
+    Ctrl_SSR3 = 0;
   }
 
   //
@@ -719,6 +737,30 @@ void user_loop()
     mqttClt.publish(t_Ctrl_actSSR2, String(Bool_Decoder[(int)Ctrl_SSR2_actState]).c_str(), true);
   }
 
+  //
+  // Set desired SSR3 state
+  //
+  if (Ctrl_SSR3 < 2)
+  {
+    // Set desired SSR3 state
+    switch (Ctrl_SSR3)
+    {
+    case 0:
+      digitalWrite(SSR3, LOW);
+      Ctrl_SSR3_actState = false;
+      break;
+    case 1:
+      digitalWrite(SSR3, HIGH);
+      Ctrl_SSR3_actState = true;
+      break;
+    }
+    // desired state set, reset to "do not change"
+    Ctrl_SSR3 = 2;
+    mqttClt.publish(t_Ctrl_SSR3, String("dnc").c_str(), true);
+    // and publish active state immediately for better responsiveness in UI
+    mqttClt.publish(t_Ctrl_actSSR3, String(Bool_Decoder[(int)Ctrl_SSR3_actState]).c_str(), true);
+  }
+
   // Reset FirstLoop
   if (FirstLoop)
   {
@@ -727,9 +769,4 @@ void user_loop()
 
   // Add some more delay for WiFi processing
   delay(100);
-
-#ifdef ONBOARD_LED
-  // Toggle LED at each loop
-  ToggleLed(LED, 100, 4);
-#endif
 }
