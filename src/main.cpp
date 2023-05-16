@@ -22,14 +22,12 @@ void loop()
   // Check connection to MQTT broker, subscribe and update topics
   MqttUpdater();
 
-#ifdef OTA_UPDATE
   // Handle OTA updates
   if (OTAUpdateHandler())
   {
     // OTA Update in progress, restart main loop
     return;
   }
-#endif
 
   // Run user specific loop and measure duration
   start_user_loop = millis();

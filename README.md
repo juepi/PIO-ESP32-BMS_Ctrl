@@ -80,6 +80,13 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Added SSR3 for manual switching through MQTT
 - Added safety shutdown of loads when communication to Daly BMS or Victron SmartShunt runs into timeout
 
+## v2.2.0
+- Reworked Load and Balancer SSR handling (now fully configurable through MQTT topics)
+- Updated MQTT subscription handling (PIO-ESP32-Template v1.1.0)
+- OTA Updates are now mandatory
+- Removed MQTT control of Daly BMS FETs (they are a safety feature, you shouldn't mess with them manually)
+- Added additional safety features (Balancer alarm mode for high cellDiff, load shutdown for minimum battery voltage)
+
 # NOTE on missing VeDirectFrameHandler library
 
 I somehow managed to not to include the VeDirectFrameHandler library into previous commits as it was intended. **This affects all versions since adding VE.Direct support in v1.2.0!**  

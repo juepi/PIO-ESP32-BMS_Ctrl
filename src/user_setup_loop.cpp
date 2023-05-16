@@ -8,7 +8,7 @@
 #include "setup.h"
 
 // Setup Daly BMS connector instance
-Daly_BMS_UART bms(DALY_UART);
+Daly_BMS_UART Daly(DALY_UART);
 
 // Setup VE.Direct
 SoftwareSerial VEDSer_Chrg1;
@@ -18,17 +18,16 @@ VeDirectFrameHandler VED_Shnt;
 
 // Setup OneWire Temperature Sensor(s)
 #ifdef ENA_ONEWIRE // Optional OneWire support
-OneWire oneWire(OWDATA);
+OneWire oneWire(PIN_OWDATA);
 DallasTemperature OWtemp(&oneWire);
 #endif
 
 // Global variable declarations
 // for MQTT topics
-int Ctrl_DalyChSw = 2;
-int Ctrl_DalyLoadSw = 2;
-int Ctrl_SSR1 = 2;
-int Ctrl_SSR2 = 2;
-int Ctrl_SSR3 = 2;
+Load_SSR_Config SSR1;
+Load_SSR_Config SSR3;
+Balancer_Config SSR2;
+PV_Config PV;
 
 /*
  * User Setup Function
@@ -36,17 +35,17 @@ int Ctrl_SSR3 = 2;
  */
 void user_setup()
 {
-  pinMode(SSR1, OUTPUT);
-  pinMode(SSR2, OUTPUT);
-  pinMode(SSR3, OUTPUT);
-  pinMode(SSR4, OUTPUT);
-  digitalWrite(SSR1, LOW);
-  digitalWrite(SSR2, LOW);
-  digitalWrite(SSR3, LOW);
-  digitalWrite(SSR4, LOW);
-  bms.Init();
+  pinMode(PIN_SSR1, OUTPUT);
+  pinMode(PIN_SSR2, OUTPUT);
+  pinMode(PIN_SSR3, OUTPUT);
+  pinMode(PIN_SSR4, OUTPUT);
+  digitalWrite(PIN_SSR1, LOW);
+  digitalWrite(PIN_SSR2, LOW);
+  digitalWrite(PIN_SSR3, LOW);
+  digitalWrite(PIN_SSR4, LOW);
+  Daly.Init();
 
-  VEDSer_Chrg1.begin(VED_BAUD, SWSERIAL_8N1, VED_CHRG1_RX, VED_CHRG1_TX, false, 512);
+  VEDSer_Chrg1.begin(VED_BAUD, SWSERIAL_8N1, PIN_VED_CHRG1_RX, PIN_VED_CHRG1_TX, false, 512);
   if (!VEDSer_Chrg1)
   {
     DEBUG_PRINTLN("Failed to setup VEDSer_Chrg1! Make sure RX/TX pins are free to use for SoftwareSerial!");
@@ -63,7 +62,7 @@ void user_setup()
   VEDSer_Chrg1.enableIntTx(false);
   VEDSer_Chrg1.flush();
 
-  VEDSer_Shnt.begin(VED_BAUD, SWSERIAL_8N1, VED_SHNT_RX, VED_SHNT_TX, false, 512);
+  VEDSer_Shnt.begin(VED_BAUD, SWSERIAL_8N1, PIN_VED_SHNT_RX, PIN_VED_SHNT_TX, false, 512);
   if (!VEDSer_Shnt)
   {
     DEBUG_PRINTLN("Failed to setup VEDSer_Shnt! Make sure RX/TX pins are free to use for SoftwareSerial!");
@@ -97,19 +96,10 @@ void user_loop()
   //
   static bool FirstLoop = true; // Firmware startup
   // Daly BMS
-  static bool BMSresponding = false;
-  static uint32_t BMSLastDataUpdate = 0;
-  static uint32_t BMSLastValidData = 0;
-  static int BMSConnStat = 0;
+  static Daly_BMS_data BMS;
   // Uptime calculation
   static uint32_t UptimeSeconds = 0;
   static unsigned long oldMillis = 0;
-  // Load
-  static bool Ctrl_SSR1_autoSetState = false; // desired state of automatic mode
-  static bool Ctrl_SSR1_actState = false;     // currently active state set on GPIO SSR1
-  static bool Ctrl_SSR3_actState = false;     // currently active state set on GPIO SSR3
-  // Balancer
-  static bool Ctrl_SSR2_actState = false; // currently active state set on GPIO
   // Other helpers
   static uint32_t MQTTLastDataPublish = 0;
   static const char *Bool_Decoder[] = {"off", "on"};
@@ -126,12 +116,7 @@ void user_loop()
   static char VED_SS_Labels[9][6] = {"PID", "V", "I", "P", "CE", "SOC", "TTG", "ALARM", "AR"};
   static VED_Shunt_data VSS;
 #ifdef ENA_ONEWIRE // Optional OneWire support
-  // Array for OneWire Temperature Sensor(s) addresses
-  static float OW_SensorData[NUM_OWTEMP] = {0};
-  static int OWConnStat = 0;
-  static uint32_t OWLastDataUpdate = 0;
-  static uint32_t OWLastValidData = 0;
-  static bool OWReadOk = true;
+  static OneWire_data OW;
 #endif
 
   //
@@ -330,38 +315,37 @@ void user_loop()
   //
   // Gather data from Daly BMS
   //
-  if ((UptimeSeconds - BMSLastDataUpdate) >= DALY_UPDATE_INTERVAL || FirstLoop)
+  if ((UptimeSeconds - BMS.lastUpdate) >= DALY_UPDATE_INTERVAL || FirstLoop)
   {
     // Fetch data from BMS
     // ATTN: takes between 640 and 710ms!
-    BMSresponding = bms.update();
-    if (BMSresponding)
+    if (Daly.update())
     {
       // data set received
-      BMSLastValidData = UptimeSeconds;
-      BMSConnStat = 1;
+      BMS.lastValid = UptimeSeconds;
+      BMS.ConnStat = 1;
     }
     else
     {
-      if ((UptimeSeconds - BMSLastValidData) > DALY_TIMEOUT)
+      if ((UptimeSeconds - BMS.lastValid) > DALY_TIMEOUT)
       {
         // Timeout limit reached
-        BMSConnStat = 2;
+        BMS.ConnStat = 2;
       }
       else
       {
         // Not yet in timeout (readout failed)
-        BMSConnStat = 3;
+        BMS.ConnStat = 3;
       }
     }
-    BMSLastDataUpdate = UptimeSeconds;
+    BMS.lastUpdate = UptimeSeconds;
   }
 
   //
   // Gather data from OneWire sensors
   //
 #ifdef ENA_ONEWIRE // Optional OneWire support
-  if ((UptimeSeconds - OWLastDataUpdate) >= OW_UPDATE_INTERVAL || FirstLoop)
+  if ((UptimeSeconds - OW.lastUpdate) >= OW_UPDATE_INTERVAL || FirstLoop)
   {
     if (FirstLoop)
     {
@@ -370,43 +354,43 @@ void user_loop()
       {
         // incorrect amount of sensors found
         // this is a permanent failure
-        OWConnStat = 4;
+        OW.ConnStat = 4;
       }
     }
     // Get OW temperatures
-    if (OWConnStat <= 3)
+    if (OW.ConnStat <= 3)
     {
       OWtemp.requestTemperatures(); // blocking call
-      OWReadOk = true;
+      OW.ReadOk = true;
       for (int i = 0; i < NUM_OWTEMP; i++)
       {
-        OW_SensorData[i] = OWtemp.getTempCByIndex(i);
-        if (OW_SensorData[i] == DEVICE_DISCONNECTED_C || OW_SensorData[i] == DEVICE_FAULT_OPEN_C)
+        OW.Sensors[i] = OWtemp.getTempCByIndex(i);
+        if (OW.Sensors[i] == DEVICE_DISCONNECTED_C || OW.Sensors[i] == DEVICE_FAULT_OPEN_C)
         {
           // sensor read fault - end this read cycle
-          OWReadOk = false;
+          OW.ReadOk = false;
           break;
         }
       }
-      if (OWReadOk)
+      if (OW.ReadOk)
       {
-        OWConnStat = 1;
-        OWLastValidData = UptimeSeconds;
+        OW.ConnStat = 1;
+        OW.lastValid = UptimeSeconds;
       }
       else
       {
-        if ((UptimeSeconds - OWLastValidData) > OW_TIMEOUT)
+        if ((UptimeSeconds - OW.lastValid) > OW_TIMEOUT)
         {
           // Timeout limit reached
-          OWConnStat = 2;
+          OW.ConnStat = 2;
         }
         else
         {
           // Not yet in timeout (readout failed)
-          OWConnStat = 3;
+          OW.ConnStat = 3;
         }
       }
-      OWLastDataUpdate = UptimeSeconds;
+      OW.lastUpdate = UptimeSeconds;
     }
   }
 #endif // ENA_ONEWIRE
@@ -438,6 +422,19 @@ void user_loop()
       Pavg_Sum += VCHRG1.Avg_PPV_Arr[i];
     }
     VCHRG1.Avg_PPV = Pavg_Sum / 10;
+    // Update PPV power level
+    if (VCHRG1.Avg_PPV < PV.LowPPV)
+    {
+      PV.PwrLvl = 0;
+    }
+    else if (VCHRG1.Avg_PPV >= PV.HighPPV)
+    {
+      PV.PwrLvl = 2;
+    }
+    else
+    {
+      PV.PwrLvl = 1; // Medium PV power - currently unused
+    }
   }
 
   //
@@ -450,39 +447,36 @@ void user_loop()
     // Controller
     if (FirstLoop)
     {
-      mqttClt.publish(t_Ctrl_StatT, String("Startup Firmware v" + String(FIRMWARE_VERSION)).c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("Startup Firmware v" + String(FIRMWARE_VERSION) + " WiFi RSSI: " + String(WiFi.RSSI())).c_str(), true);
     }
     mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
-    mqttClt.publish(t_Ctrl_actSSR1, String(Bool_Decoder[(int)Ctrl_SSR1_actState]).c_str(), true);
-    mqttClt.publish(t_Ctrl_actSSR2, String(Bool_Decoder[(int)Ctrl_SSR2_actState]).c_str(), true);
-    mqttClt.publish(t_Ctrl_actSSR3, String(Bool_Decoder[(int)Ctrl_SSR3_actState]).c_str(), true);
 
     // Daly BMS
-    if (BMSConnStat <= 1)
+    if (BMS.ConnStat <= 1)
     {
       // Send cell voltages
-      for (int i = 0; i < bms.get.numberOfCells; i++)
+      for (int i = 0; i < Daly.get.numberOfCells; i++)
       {
         int j = i + 1;
         String MqttTopStr = String(t_DV_C_Templ) + String(j) + "V";
-        mqttClt.publish(MqttTopStr.c_str(), String((bms.get.cellVmV[i] / 1000), 3).c_str(), true);
+        mqttClt.publish(MqttTopStr.c_str(), String((Daly.get.cellVmV[i] / 1000), 3).c_str(), true);
       }
       // send any other more or less useful stuff
-      mqttClt.publish(t_DSOC, String(bms.get.packSOC, 0).c_str(), true);
-      mqttClt.publish(t_DV, String(bms.get.packVoltage, 2).c_str(), true);
-      mqttClt.publish(t_DdV, String(bms.get.cellDiff, 0).c_str(), true);
-      mqttClt.publish(t_DI, String(bms.get.packCurrent, 2).c_str(), true);
-      mqttClt.publish(t_DLSw, String(Bool_Decoder[(int)bms.get.disChargeFetState]).c_str(), true);
-      mqttClt.publish(t_DCSw, String(Bool_Decoder[(int)bms.get.chargeFetState]).c_str(), true);
-      mqttClt.publish(t_DTemp, String(bms.get.tempAverage, 0).c_str(), true);
-      mqttClt.publish(t_D_CSTAT, String(ConnStat_Decoder[BMSConnStat]).c_str(), true);
+      mqttClt.publish(t_DSOC, String(Daly.get.packSOC, 0).c_str(), true);
+      mqttClt.publish(t_DV, String(Daly.get.packVoltage, 2).c_str(), true);
+      mqttClt.publish(t_DdV, String(Daly.get.cellDiff, 0).c_str(), true);
+      mqttClt.publish(t_DI, String(Daly.get.packCurrent, 2).c_str(), true);
+      mqttClt.publish(t_DLSw, String(Bool_Decoder[(int)Daly.get.disChargeFetState]).c_str(), true);
+      mqttClt.publish(t_DCSw, String(Bool_Decoder[(int)Daly.get.chargeFetState]).c_str(), true);
+      mqttClt.publish(t_DTemp, String(Daly.get.tempAverage, 0).c_str(), true);
+      mqttClt.publish(t_D_CSTAT, String(ConnStat_Decoder[BMS.ConnStat]).c_str(), true);
       // Add some delay for WiFi processing
       delay(100);
     }
     else
     {
       // report (broken) connection state
-      mqttClt.publish(t_D_CSTAT, String(ConnStat_Decoder[BMSConnStat]).c_str(), true);
+      mqttClt.publish(t_D_CSTAT, String(ConnStat_Decoder[BMS.ConnStat]).c_str(), true);
     }
 
     // VE.Direct Charger #1
@@ -554,21 +548,21 @@ void user_loop()
 
 #ifdef ENA_ONEWIRE // Optional OneWire support
     // OneWire Sensors
-    if (OWConnStat <= 1)
+    if (OW.ConnStat <= 1)
     {
       // Send sensor data
       for (int i = 0; i < NUM_OWTEMP; i++)
       {
         int j = i + 1;
         String MqttTopStr = String(t_OW_TEMP_Templ) + String(j);
-        mqttClt.publish(MqttTopStr.c_str(), String(OW_SensorData[i], 0).c_str(), true);
+        mqttClt.publish(MqttTopStr.c_str(), String(OW.Sensors[i], 0).c_str(), true);
       }
-      mqttClt.publish(t_OW_CSTAT, String(ConnStat_Decoder[OWConnStat]).c_str(), true);
+      mqttClt.publish(t_OW_CSTAT, String(ConnStat_Decoder[OW.ConnStat]).c_str(), true);
     }
     else
     {
       // report (broken) connection state
-      mqttClt.publish(t_OW_CSTAT, String(ConnStat_Decoder[OWConnStat]).c_str(), true);
+      mqttClt.publish(t_OW_CSTAT, String(ConnStat_Decoder[OW.ConnStat]).c_str(), true);
     }
 #endif // ENA_ONEWIRE
 
@@ -580,185 +574,283 @@ void user_loop()
   // Load Controller (SSR1)
   //
   // If SOC has reached the configured charge limit, enable load
-  if (!Ctrl_SSR1_autoSetState && VSS.SOC >= ENABLE_LOAD_SOC)
+  if (FirstLoop)
   {
-    Ctrl_SSR1 = 1;
-    Ctrl_SSR1_autoSetState = true;
-    mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_SoC:" + String(VSS.SOC, 0)).c_str(), true);
-  }
-  // if we have a really sunny day, enable load at the configured HIGH_PV limits
-  else if (!Ctrl_SSR1_autoSetState && VCHRG1.Avg_PPV >= HIGH_PV_AVG_PWR && VSS.SOC >= HIGH_PV_EN_LOAD_SOC)
-  {
-    Ctrl_SSR1 = 1;
-    Ctrl_SSR1_autoSetState = true;
-    mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
-  }
-  // if firmware has just started, enable load when SOC is at least BOOT_EN_LOAD_SOC
-  else if (!Ctrl_SSR1_autoSetState && FirstLoop && VSS.SOC >= BOOT_EN_LOAD_SOC)
-  {
-    Ctrl_SSR1 = 1;
-    Ctrl_SSR1_autoSetState = true;
-    mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
-  }
-
-  // Disable SSR1 + SSR3 when DISABLE_LOAD_SOC is reached
-  // This must also trigger if the load was enabled manually, so use effective SSR1_actState
-  // SAFETY: Disable loads when communication to VSS or Daly timed out
-  if (Ctrl_SSR1_actState && (VSS.SOC <= DISABLE_LOAD_SOC || VSS.ConnStat == 2 || BMSConnStat == 2))
-  {
-    Ctrl_SSR1 = 0;
-    Ctrl_SSR1_autoSetState = false;
-    mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_SoC:" + String(VSS.SOC, 0)).c_str(), true);
-    // TODO: fully integrate SSR3 / rework whole load handling
-    // also disable SSR3 at low SOC
-    Ctrl_SSR3 = 0;
-  }
-
-  //
-  // Active Balancer Controller (SSR2)
-  //
-  if (Ctrl_SSR2_actState)
-  {
-    // Balancer is active
-    // ..check if any cell is below BAL_OFF_CELLV
-    for (int i = 0; i < bms.get.numberOfCells; i++)
+    if (SSR1.Auto && (VSS.SOC > SSR1.BootOnSOC))
     {
-      if (bms.get.cellVmV[i] < BAL_OFF_CELLV)
-      {
-        // Low cell voltage threshold reached, disable Balancer
-        Ctrl_SSR2 = 0;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR2_OFF_C" + String((i + 1)) + "_Vlow").c_str(), true);
-        break;
-      }
+      SSR1.setState = true;
+      mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
     }
   }
   else
   {
-    // Balancer is inactive
-    // If voltage difference is too high
-    if (bms.get.cellDiff > BAL_ON_CELLDIFF)
+    if (SSR1.Auto && !SSR1.actState)
     {
-      // ..check if any cell is above BAL_ON_CELLV
-      for (int i = 0; i < bms.get.numberOfCells; i++)
+      // Auto mode enabled, SSR1 disabled, check PV power state
+      switch (PV.PwrLvl)
       {
-        if (bms.get.cellVmV[i] > BAL_ON_CELLV)
+      case 0 ... 1: // Low and medium power
+        if (VSS.SOC > SSR1.LPOnSOC)
         {
-          // High cell voltage threshold reached, enable Balancer
-          Ctrl_SSR2 = 1;
-          mqttClt.publish(t_Ctrl_StatT, String("SSR2_ON_C" + String((i + 1)) + "_Vhi").c_str(), true);
-          // end loop, one cell above threshold is enough
-          break;
+          SSR1.setState = true;
+          mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        }
+        break;
+      case 2: // high power
+        if (VSS.SOC > SSR1.HPOnSOC)
+        {
+          SSR1.setState = true;
+          mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
         }
       }
     }
   }
 
+  // Disable SSR1 when SOC according to PV power is reached
+  // This must also trigger if the load was enabled manually, so use effective SSR1.actState
+  if (SSR1.actState)
+  {
+    switch (PV.PwrLvl)
+    {
+    case 0 ... 1: // Low and medium power
+      if (VSS.SOC <= SSR1.LPOffSOC)
+      {
+        SSR1.setState = false;
+        mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+      }
+      break;
+    case 2: // high power
+      if (VSS.SOC <= SSR1.HPOffSOC)
+      {
+        SSR1.setState = false;
+        mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+      }
+    }
+  }
+
   //
-  // Set desired switch states
+  // Load Controller (SSR3)
   //
-  if (Ctrl_DalyChSw < 2)
+  // If SOC has reached the configured charge limit, enable load
+  if (FirstLoop)
+  {
+    if (SSR3.Auto && (VSS.SOC > SSR3.BootOnSOC))
+    {
+      SSR3.setState = true;
+      mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+    }
+  }
+  else
+  {
+    if (SSR3.Auto && !SSR3.actState)
+    {
+      // Auto mode enabled, SSR1 disabled, check PV power state
+      switch (PV.PwrLvl)
+      {
+      case 0 ... 1: // Low and medium power
+        if (VSS.SOC > SSR3.LPOnSOC)
+        {
+          SSR3.setState = true;
+          mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        }
+        break;
+      case 2: // high power
+        if (VSS.SOC > SSR3.HPOnSOC)
+        {
+          SSR3.setState = true;
+          mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        }
+      }
+    }
+  }
+
+  // Disable SSR3 when SOC according to PV power is reached
+  // This must also trigger if the load was enabled manually, so use effective SSR3.actState
+  if (SSR3.actState)
+  {
+    switch (PV.PwrLvl)
+    {
+    case 0 ... 1: // Low and medium power
+      if (VSS.SOC <= SSR3.LPOffSOC)
+      {
+        SSR3.setState = false;
+        mqttClt.publish(t_Ctrl_StatT, String("SSR3_OFF_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+      }
+      break;
+    case 2: // high power
+      if (VSS.SOC <= SSR3.HPOffSOC)
+      {
+        SSR3.setState = false;
+        mqttClt.publish(t_Ctrl_StatT, String("SSR3_OFF_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+      }
+    }
+  }
+
+  //
+  // SAFETY CHECKS
+  //
+  // Disable loads when communication to VSS or Daly-BMS timed out
+  if ((SSR1.actState || SSR3.actState) && (VSS.ConnStat == 2 || BMS.ConnStat == 2))
+  {
+    SSR1.setState = false;
+    SSR3.setState = false;
+    // disable Auto mode when comm fails
+    SSR1.Auto = false;
+    SSR3.Auto = false;
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("SSR1+3_OFF_SAFETY_CSTAT:" + String(VSS.ConnStat) + "/" + String(BMS.ConnStat)).c_str(), true);
+  }
+  // Disable loads when battery pack voltage is below critical threshold
+  if ((SSR1.actState || SSR3.actState) && Daly.get.packVoltage <= SAFETY_BAT_MIN_V)
+  {
+    SSR1.setState = false;
+    SSR3.setState = false;
+    // disable Auto mode
+    SSR1.Auto = false;
+    SSR3.Auto = false;
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("SSR1+3_OFF_SAFETY_LOW_VBAT:" + String(Daly.get.packVoltage) + "V").c_str(), true);
+  }
+
+  //
+  // Active Balancer Controller (SSR2)
+  //
+  if (SSR2.Auto)
+  {
+    if (SSR2.actState)
+    {
+      // Balancer is active
+      // ..check if any cell is below low cell voltage threshold
+      for (int i = 0; i < Daly.get.numberOfCells; i++)
+      {
+        if (Daly.get.cellVmV[i] < SSR2.CVOff)
+        {
+          // Low cell voltage threshold reached, disable Balancer
+          SSR2.setState = false;
+          mqttClt.publish(t_Ctrl_StatT, String("SSR2_OFF_C" + String((i + 1)) + "_Vlow").c_str(), true);
+          break;
+        }
+      }
+    }
+    else
+    {
+      // Balancer is inactive
+      // If voltage difference is too high
+      if (Daly.get.cellDiff > SSR2.CdiffOn)
+      {
+        // ..check if any cell is above enable voltage
+        for (int i = 0; i < Daly.get.numberOfCells; i++)
+        {
+          if (Daly.get.cellVmV[i] > SSR2.CVOn)
+          {
+            // High cell voltage threshold reached, enable Balancer
+            SSR2.setState = true;
+            mqttClt.publish(t_Ctrl_StatT, String("SSR2_ON_C" + String((i + 1)) + "_Vhi").c_str(), true);
+            // end loop, one cell above threshold is enough
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // SAFETY: Enable Balancer at any time if Celldiff is extremely high
+  if ((Daly.get.cellDiff > SSR2.AlrmCdiff) && !SSR2.AlarmMode)
+  {
+    SSR2.AlarmMode = true;
+    SSR2.Auto = false;
+    SSR2.setState = true;
+    mqttClt.publish(t_Ctrl_Cfg_SSR2_Auto, String(Bool_Decoder[(int)SSR2.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("SSR2_ON_SAFETY_Diff:" + String((Daly.get.cellDiff))).c_str(), true);
+  }
+
+  // Check if Balancer Alarm mode can be left
+  if (SSR2.AlarmMode)
+  {
+    if (Daly.get.cellDiff < SSR2.NoAlrmCdiff)
+    {
+      // Celldiff normalized, exit alarm mode and re-enable auto mode
+      SSR2.AlarmMode = false;
+      SSR2.Auto = true;
+      SSR2.setState = false;
+      mqttClt.publish(t_Ctrl_Cfg_SSR2_Auto, String(Bool_Decoder[(int)SSR2.Auto]).c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("SSR2_OFF_SAFETY_Diff:" + String((Daly.get.cellDiff))).c_str(), true);
+    }
+  }
+
+  //
+  // Set desired Daly-BMS MOSFET states
+  //
+  // NOTE: Currently unused, for future safety features
+  if (BMS.setCSw < 2)
   {
     // Set desired Charge Switch state
-    switch (Ctrl_DalyChSw)
+    switch (BMS.setCSw)
     {
     case 0:
-      bms.setChargeMOS(false);
+      Daly.setChargeMOS(false);
       break;
     case 1:
-      bms.setChargeMOS(true);
+      Daly.setChargeMOS(true);
       break;
     }
+    mqttClt.publish(t_Ctrl_StatT, (String("Daly_BMS_CSw:") + String(Bool_Decoder[BMS.setCSw])).c_str(), true);
     // desired state set, reset to "do not change"
-    Ctrl_DalyChSw = 2;
-    mqttClt.publish(t_Ctrl_CSw, String("dnc").c_str(), true);
+    BMS.setCSw = 2;
   }
-  if (Ctrl_DalyLoadSw < 2)
+  if (BMS.setLSw < 2)
   {
     // Set desired Discharge Switch state
-    switch (Ctrl_DalyLoadSw)
+    switch (BMS.setLSw)
     {
     case 0:
-      bms.setDischargeMOS(false);
+      Daly.setDischargeMOS(false);
       break;
     case 1:
-      bms.setDischargeMOS(true);
+      Daly.setDischargeMOS(true);
       break;
     }
+    mqttClt.publish(t_Ctrl_StatT, (String("Daly_BMS_LSw:") + String(Bool_Decoder[BMS.setLSw])).c_str(), true);
     // desired state set, reset to "do not change"
-    Ctrl_DalyLoadSw = 2;
-    mqttClt.publish(t_Ctrl_LSw, String("dnc").c_str(), true);
+    BMS.setLSw = 2;
   }
 
   //
   // Set desired SSR1 state
   //
-  if (Ctrl_SSR1 < 2)
+  if (SSR1.setState != SSR1.actState)
   {
-    // Set desired SSR1 state
-    switch (Ctrl_SSR1)
-    {
-    case 0:
-      digitalWrite(SSR1, LOW);
-      Ctrl_SSR1_actState = false;
-      break;
-    case 1:
-      digitalWrite(SSR1, HIGH);
-      Ctrl_SSR1_actState = true;
-      break;
-    }
-    // desired state set, reset to "do not change"
-    Ctrl_SSR1 = 2;
-    mqttClt.publish(t_Ctrl_SSR1, String("dnc").c_str(), true);
-    // and publish active state immediately for better responsiveness in UI
-    mqttClt.publish(t_Ctrl_actSSR1, String(Bool_Decoder[(int)Ctrl_SSR1_actState]).c_str(), true);
+    digitalWrite(PIN_SSR1, SSR1.setState);
+    SSR1.actState = SSR1.setState;
+    // and publish states immediately for better responsiveness in UI
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_setState, String(Bool_Decoder[(int)SSR1.setState]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_actState, String(Bool_Decoder[(int)SSR1.actState]).c_str(), true);
   }
 
   //
   // Set desired SSR2 state
   //
-  if (Ctrl_SSR2 < 2)
+  if (SSR2.setState != SSR2.actState)
   {
-    // Set desired SSR2 state
-    switch (Ctrl_SSR2)
-    {
-    case 0:
-      digitalWrite(SSR2, LOW);
-      Ctrl_SSR2_actState = false;
-      break;
-    case 1:
-      digitalWrite(SSR2, HIGH);
-      Ctrl_SSR2_actState = true;
-      break;
-    }
-    // desired state set, reset to "do not change"
-    Ctrl_SSR2 = 2;
-    mqttClt.publish(t_Ctrl_SSR2, String("dnc").c_str(), true);
-    // and publish active state immediately for better responsiveness in UI
-    mqttClt.publish(t_Ctrl_actSSR2, String(Bool_Decoder[(int)Ctrl_SSR2_actState]).c_str(), true);
+    digitalWrite(PIN_SSR2, SSR2.setState);
+    SSR2.actState = SSR2.setState;
+    // and publish states immediately for better responsiveness in UI
+    mqttClt.publish(t_Ctrl_Cfg_SSR2_setState, String(Bool_Decoder[(int)SSR2.setState]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR2_actState, String(Bool_Decoder[(int)SSR2.actState]).c_str(), true);
   }
 
   //
   // Set desired SSR3 state
   //
-  if (Ctrl_SSR3 < 2)
+  if (SSR3.setState != SSR3.actState)
   {
-    // Set desired SSR3 state
-    switch (Ctrl_SSR3)
-    {
-    case 0:
-      digitalWrite(SSR3, LOW);
-      Ctrl_SSR3_actState = false;
-      break;
-    case 1:
-      digitalWrite(SSR3, HIGH);
-      Ctrl_SSR3_actState = true;
-      break;
-    }
-    // desired state set, reset to "do not change"
-    Ctrl_SSR3 = 2;
-    mqttClt.publish(t_Ctrl_SSR3, String("dnc").c_str(), true);
-    // and publish active state immediately for better responsiveness in UI
-    mqttClt.publish(t_Ctrl_actSSR3, String(Bool_Decoder[(int)Ctrl_SSR3_actState]).c_str(), true);
+    digitalWrite(PIN_SSR3, SSR3.setState);
+    SSR3.actState = SSR3.setState;
+    // and publish states immediately for better responsiveness in UI
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_setState, String(Bool_Decoder[(int)SSR3.setState]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_actState, String(Bool_Decoder[(int)SSR3.actState]).c_str(), true);
   }
 
   // Reset FirstLoop
@@ -766,7 +858,4 @@ void user_loop()
   {
     FirstLoop = false;
   }
-
-  // Add some more delay for WiFi processing
-  delay(100);
 }

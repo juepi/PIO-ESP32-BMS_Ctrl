@@ -29,7 +29,6 @@ extern unsigned int ReceivedTopics;
 
 // MQTT Topics and corresponding local vars
 // ===========================================
-#ifdef OTA_UPDATE
 // OTA Client Name
 #define OTA_CLTNAME TEXTIFY(CLTNAME)
 // OTA Update specific vars
@@ -54,7 +53,26 @@ extern bool SentUpdateRequested;
 extern bool OtaInProgress;
 extern bool OtaIPsetBySketch;
 extern bool SentOtaIPtrue;
-#endif
+
+//
+// Configuration struct for MQTT subscriptions
+//
+struct MqttSubCfg
+{
+    const char *Topic; // Topic to subscribe to
+    int Type;          // Type of message data received: 0=bool (message "on/off"); 1=int; 2=float
+    bool Subscribed;   // true if successfully subscribed to topic
+    bool MsgRcvd;      // true if a message has been received for topic
+    union              // Pointer to Variable which should be updated with the decoded message (only one applies acc. to "Type")
+    {
+        bool *BoolPtr;
+        int *IntPtr;
+        float *FloatPtr;
+    };
+};
+
+extern const int SubscribedTopicCnt; // Number of elements in MqttSubscriptions array (define in mqtt-subscriptions.cpp)
+extern MqttSubCfg MqttSubscriptions[];
 
 #ifdef READVCC
 // Topic where VCC will be published (not yet working with ESP32!)

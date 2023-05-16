@@ -39,29 +39,31 @@ extern DallasTemperature OWtemp;
 #endif
 
 //
-// Global user vars
-//
-// Modified by MQTT subscriptions
-extern int Ctrl_DalyChSw;   // Desired Daly MOSFET switch states, either on, off or dnc (do not change)
-extern int Ctrl_DalyLoadSw; // if set to on/off, will be set ONCE by the ESP, then reset to dnc
-extern int Ctrl_SSR1;       // SSR1 switch state (on/off/dnc)
-extern int Ctrl_SSR2;       // SSR2 switch state (on/off/dnc)
-extern int Ctrl_SSR3;       // SSR3 switch state (on/off/dnc)
-
-//
-// User SSR
+// Hardware Setup - User SSR
 // HIGH level -> SSR is switched ON
 //
-#define SSR1 5 // Battery Load Switch 1
-#define SSR2 3 // Active Balancer Enable
-#define SSR3 6 // Battery Load Switch 2
-#define SSR4 7 // unused - defined to match KiCad board
+#define PIN_SSR1 5 // Battery Load Switch 1
+#define PIN_SSR2 3 // Active Balancer Enable
+#define PIN_SSR3 6 // Battery Load Switch 2
+#define PIN_SSR4 7 // unused - defined to match KiCad board
+
+//
+// Controller specific
+//
+// MQTT Topics for published data
+#define t_Ctrl_StatT TOPTREE "CtrlStatTXT" // ESP Controller status text provided through MQTT
+#define t_Ctrl_StatU TOPTREE "CtrlStatUpt" // ESP Controller uptime provided through MQTT
+
+//
+// MQTT Data update interval
+//
+#define DATA_UPDATE_INTERVAL 120 // Send MQTT data ever x seconds
 
 //
 // OneWire Bus
 //
 #ifdef ENA_ONEWIRE           // Optional OneWire support - doesn't work yet (doesn't detect sensor)!
-#define OWDATA 4             // GPIO for OneWire communication (Note: high GPIOs >36 do not work!)
+#define PIN_OWDATA 4         // GPIO for OneWire communication (Note: high GPIOs >36 do not work!)
 #define OWRES 9              // Use 9 bits resolution (0.5°C)
 #define NUM_OWTEMP 2         // Amount of connected DS18B20 sensors
 #define OW_UPDATE_INTERVAL 5 // sensor readout interval in seconds
@@ -81,21 +83,74 @@ extern int Ctrl_SSR3;       // SSR3 switch state (on/off/dnc)
 #define DALY_UPDATE_INTERVAL 5
 #define DALY_TIMEOUT 60 // If no data update occurs within this timespan (seconds), connection to Daly BMS considered dead
 
+// Battery Safety: Shutdown all loads when reaching this threshold
+#define SAFETY_BAT_MIN_V 24.8f
+
+// MQTT Publish only
+#define t_DSOC TOPTREE "Daly_SOC"      // BMS Battery State of Charge(useless, see current)
+#define t_DV TOPTREE "Daly_V"          // BMS Battery Voltage
+#define t_DdV TOPTREE "Daly_dV"        // BMS Voltage diff between highest and lowest cell voltage
+#define t_DI TOPTREE "Daly_I"          // BMS Battery Current(useless, only shows currents > 1.1A!)
+#define t_DV_C_Templ TOPTREE "Daly_C"  // Cell Voltage template; adding cell number + "V" at the end (transmitted cell number starts with 1)
+#define t_DLSw TOPTREE "Daly_LSw"      // Actual "switch state" for load MOSFETs (0/1)
+#define t_DCSw TOPTREE "Daly_CSw"      // Actual "switch state" for charging MOSFETs (0/1)
+#define t_DTemp TOPTREE "Daly_Temp"    // Temperature sensor of the BMS
+#define t_D_CSTAT TOPTREE "Daly_CSTAT" // Daly Serial connection status
+
 //
-// Load settings (SSR1)
+// Load Configuration (SSR1 + SSR3)
+// Updated by MQTT Topics at firmware boot
 //
-#define ENABLE_LOAD_SOC 80     // SOC at which to enable the load (SSR1)
-#define DISABLE_LOAD_SOC 10    // SOC at which all loads will be disconnected (SSR1, SSR3)
-#define HIGH_PV_AVG_PWR 20     // If the average charging power is higher than this..
-#define HIGH_PV_EN_LOAD_SOC 50 //.. enable the load at an earlier SOC to avoid wasting PV energy
-#define BOOT_EN_LOAD_SOC 30    // If SOC is >= this value, load will be enabled at firmware startup
+#define DEF_OFF_LOAD_SOC 10   // Default SOC at which to disable the load
+#define DEF_LP_ON_LOAD_SOC 90 // SOC at which to enable the load at low PV power
+#define DEF_HP_ON_LOAD_SOC 60 // SOC at which to enable the load at high PV power
+#define DEF_BOOT_ON_SOC 90    // If SOC is >= this value, load will be enabled at firmware startup
+
+// MQTT Publish only
+#define t_Ctrl_Cfg_SSR1_actState TOPTREE "Cfg/SSR1_actState" // Actual state of SSR1 GPIO (on/off)
+#define t_Ctrl_Cfg_SSR3_actState TOPTREE "Cfg/SSR3_actState" // Actual state of SSR3 GPIO (on/off)
+
+// MQTT Topics with subscriptions
+// Remember: All of the subscribed topics need pre-defined (retained) values!
+#define t_Ctrl_Cfg_SSR1_setState TOPTREE "Cfg/SSR1_setState" // User-desired state of SSR1 GPIO (on/off)
+#define t_Ctrl_Cfg_SSR1_Auto TOPTREE "Cfg/SSR1_Auto"
+#define t_Ctrl_Cfg_SSR1_LPOnSOC TOPTREE "Cfg/SSR1_LPOnSOC"
+#define t_Ctrl_Cfg_SSR1_LPOffSOC TOPTREE "Cfg/SSR1_LPOffSOC"
+#define t_Ctrl_Cfg_SSR1_HPOnSOC TOPTREE "Cfg/SSR1_HPOnSOC"
+#define t_Ctrl_Cfg_SSR1_HPOffSOC TOPTREE "Cfg/SSR1_HPOffSOC"
+#define t_Ctrl_Cfg_SSR1_BootOnSOC TOPTREE "Cfg/SSR1_BootOnSOC"
+
+#define t_Ctrl_Cfg_SSR3_setState TOPTREE "Cfg/SSR3_setState" // Desired state of SSR3 GPIO (on/off)
+#define t_Ctrl_Cfg_SSR3_Auto TOPTREE "Cfg/SSR3_Auto"
+#define t_Ctrl_Cfg_SSR3_LPOnSOC TOPTREE "Cfg/SSR3_LPOnSOC"
+#define t_Ctrl_Cfg_SSR3_LPOffSOC TOPTREE "Cfg/SSR3_LPOffSOC"
+#define t_Ctrl_Cfg_SSR3_HPOnSOC TOPTREE "Cfg/SSR3_HPOnSOC"
+#define t_Ctrl_Cfg_SSR3_HPOffSOC TOPTREE "Cfg/SSR3_HPOffSOC"
+#define t_Ctrl_Cfg_SSR3_BootOnSOC TOPTREE "Cfg/SSR3_BootOnSOC"
+
+#define t_Ctrl_Cfg_PV_LowPPV TOPTREE "Cfg/LowPPV"
+#define t_Ctrl_Cfg_PV_HighPPV TOPTREE "Cfg/HighPPV"
 
 //
 // Active Balancer Settings (SSR2)
 //
-#define BAL_ON_CELLDIFF 30 // If cell voltage difference is higher than this [mV] AND
-#define BAL_ON_CELLV 3400  // ..if a cell has reached this voltage level [mV], enable the balancer
-#define BAL_OFF_CELLV 3300 // DISABLE balancer if a cell has fallen below this voltage level [mV]
+// Default settings, Updated by MQTT Topics at firmware boot
+#define DEF_BAL_ON_CELLDIFF 30     // If cell voltage difference is higher than this [mV] AND
+#define DEF_BAL_ON_CELLV 3400      // if a cell has reached this voltage level [mV], enable the balancer
+#define DEF_BAL_OFF_CELLV 3200     // DISABLE balancer if a cell has fallen below this voltage level [mV]
+#define DEF_BAL_ALARM_CELLDIFF 300 // If cell voltage difference is higher than this force-enable balancer
+#define DEF_BAL_NO_ALARM_CD 10     // Exit alarm mode when Celldiff drops below this threshold
+
+// MQTT Publish only
+#define t_Ctrl_Cfg_SSR2_actState TOPTREE "Cfg/SSR2_actState" // Actual state of SSR2 GPIO (on/off)
+
+// MQTT Topics with subscriptions
+#define t_Ctrl_Cfg_SSR2_setState TOPTREE "Cfg/SSR2_setState"
+#define t_Ctrl_Cfg_SSR2_Auto TOPTREE "Cfg/SSR2_Auto"
+#define t_Ctrl_Cfg_SSR2_CVOn TOPTREE "Cfg/SSR2_CVOn"
+#define t_Ctrl_Cfg_SSR2_CVOff TOPTREE "Cfg/SSR2_CVOff"
+#define t_Ctrl_Cfg_SSR2_CdiffOn TOPTREE "Cfg/SSR2_CdiffOn"
+#define t_Ctrl_Cfg_SSR2_AlrmCdiff TOPTREE "Cfg/SSR2_AlrmCdiff"
 
 //
 // Victron VE.Direct settings
@@ -105,8 +160,8 @@ extern int Ctrl_SSR3;       // SSR3 switch state (on/off/dnc)
 #define VED_TIMEOUT 180 // If no data update occurs within this timespan (seconds), connection to VE.Direct device is considered dead
 
 // SmartSolar 75/15 Charger settings (charger #1)
-#define VED_CHRG1_RX 33 // RX for SoftwareSerial
-#define VED_CHRG1_TX 21 // TX for SoftwareSerial (unused)
+#define PIN_VED_CHRG1_RX 33 // RX for SoftwareSerial
+#define PIN_VED_CHRG1_TX 21 // TX for SoftwareSerial (unused)
 // Array element indexes of VED_Chrg1.veValue which will be sent to the MQTT broker (ATTN: valid for SmartSolar 75/15 with firmware 1.61)
 // See Victron Documentation: https://www.victronenergy.com/support-and-downloads/technical-information# --> VE.Direct protocol
 #define i_CHRG_LBL_VB 3   // battery voltage
@@ -128,8 +183,8 @@ extern int Ctrl_SSR3;       // SSR3 switch state (on/off/dnc)
 #define t_VED_C1_AvgPPV TOPTREE "VC1_AvgPPV" // Calculated 1hr PV power average
 
 // SmartShunt 500 settings
-#define VED_SHNT_RX 35 // RX for SoftwareSerial
-#define VED_SHNT_TX 34 // TX for SoftwareSerial (unused)
+#define PIN_VED_SHNT_RX 35 // RX for SoftwareSerial
+#define PIN_VED_SHNT_TX 34 // TX for SoftwareSerial (unused)
 
 // Readout error detection
 #define VSS_MAX_SOC_DIFF 5 // max. allowed diff of SOC value between 2 readouts (larger diff -> new value ignored)
@@ -160,38 +215,9 @@ extern int Ctrl_SSR3;       // SSR3 switch state (on/off/dnc)
 #define t_VED_SH_CSTAT TOPTREE "VSS_CSTAT" // SmartShunt connection status
 
 //
-// MQTT Data update interval
-//
-#define DATA_UPDATE_INTERVAL 120 // Send MQTT data ever x seconds
-
-//
-// MQTT Topics for BMS, Load and Balancer Controlling and Monitoring
-//
-// Publish only
-#define t_DSOC TOPTREE "Daly_SOC"             // BMS Battery State of Charge(useless, see current)
-#define t_DV TOPTREE "Daly_V"                 // BMS Battery Voltage
-#define t_DdV TOPTREE "Daly_dV"               // BMS Voltage diff between highest and lowest cell voltage
-#define t_DI TOPTREE "Daly_I"                 // BMS Battery Current(useless, only shows currents > 1.1A!)
-#define t_DV_C_Templ TOPTREE "Daly_C"         // Cell Voltage template; adding cell number + "V" at the end (transmitted cell number starts with 1)
-#define t_DLSw TOPTREE "Daly_LSw"             // Actual "switch state" for load MOSFETs (0/1)
-#define t_DCSw TOPTREE "Daly_CSw"             // Actual "switch state" for charging MOSFETs (0/1)
-#define t_DTemp TOPTREE "Daly_Temp"           // Temperature sensor of the BMS
-#define t_D_CSTAT TOPTREE "Daly_CSTAT"        // Daly Serial connection status
-#define t_Ctrl_StatT TOPTREE "CtrlStatTXT"    // ESP Controller status text provided through MQTT (basically to check if UART to Daly BMS is OK)
-#define t_Ctrl_StatU TOPTREE "CtrlStatUpt"    // ESP Controller uptime provided through MQTT
-#define t_Ctrl_actSSR1 TOPTREE "Ctrl_actSSR1" // Actual state of SSR1 GPIO (on/off)
-#define t_Ctrl_actSSR2 TOPTREE "Ctrl_actSSR2" // Actual state of SSR2 GPIO (on/off)
-#define t_Ctrl_actSSR3 TOPTREE "Ctrl_actSSR3" // Actual state of SSR2 GPIO (on/off)
-// Subscriptions
-#define t_Ctrl_CSw TOPTREE "Ctrl_CSw"   // User-desired state of Daly charging MOSFETs (on/off or dnc for "do not change")
-#define t_Ctrl_LSw TOPTREE "Ctrl_LSw"   // User-desired state of Daly discharging MOSFETs (on/off or dnc)
-#define t_Ctrl_SSR1 TOPTREE "Ctrl_SSR1" // User-desired state of SSR1 GPIO (on/off/dnc)
-#define t_Ctrl_SSR2 TOPTREE "Ctrl_SSR2" // User-desired state of SSR2 GPIO (on/off/dnc)
-#define t_Ctrl_SSR3 TOPTREE "Ctrl_SSR3" // User-desired state of SSR3 GPIO (on/off/dnc)
-
-//
 // Data structures
 //
+// Struct for VE.Direct SmartShunt data
 struct VED_Shunt_data
 {
     float V = 0; // useful data copied from VE.Direct frame
@@ -213,6 +239,7 @@ struct VED_Shunt_data
     int ConnStat = 0;           // Connection Status
 };
 
+// Struct for VE.Direct Charger data
 struct VED_Charger_data
 {
     int PPV = 0;
@@ -229,5 +256,71 @@ struct VED_Charger_data
     uint32_t lastDecodedFr = 0; // uptime of last decoded frame
     int ConnStat = 0;           // Connection Status
 };
+
+// Additional Daly BMS data
+struct Daly_BMS_data
+{
+    int ConnStat = 0; // Connection status
+    // ATTENTION: BMS FET states should only be set by the BMS-Controller in case of emergency!
+    int setLSw = 2;          // desired state of Daly Load (Discharge) FETs (0=off, 1=on, 2=dnc)
+    int setCSw = 2;          // desired state of Daly Charge FETs (0=off, 1=on, 2=dnc)
+    uint32_t lastUpdate = 0; // to verify connection is active
+    uint32_t lastValid = 0;  // uptime of last valid frame
+};
+
+#ifdef ENA_ONEWIRE // Optional OneWire support
+struct OneWire_data
+{
+    // Array for OneWire Temperature Sensor(s) addresses
+    float Sensors[NUM_OWTEMP] = {0};
+    int ConnStat = 0;
+    uint32_t lastUpdate = 0;
+    uint32_t lastValid = 0;
+    bool ReadOk = true;
+};
+#endif
+
+// Config struct for load switching SSRs
+struct Load_SSR_Config
+{
+    bool actState = false;            // Currently active state of the SSR (GPIO)
+    bool setState = false;            // desired (set) state of the SSR (either by this sketch or received by MQTT message)
+    bool Auto = false;                // Automatic mode (enable/disable by MQTT)
+    int LPOnSOC = DEF_LP_ON_LOAD_SOC; // Low PV power ON SOC (configured via MQTT topic)
+    int LPOffSOC = DEF_OFF_LOAD_SOC;  // Low PV power OFF SOC (configured via MQTT topic)
+    int HPOnSOC = DEF_HP_ON_LOAD_SOC; // High PV power ON SOC (configured via MQTT topic)
+    int HPOffSOC = DEF_OFF_LOAD_SOC;  // High PV power OFF SOC (configured via MQTT topic)
+    int BootOnSOC = DEF_BOOT_ON_SOC;  // SOC at which to enable SSR at firmware boot (configured via MQTT topic)
+};
+
+// Config struct for balancer (SSR2)
+struct Balancer_Config
+{
+    bool actState = false;                  // Currently active state of the balancer SSR (GPIO)
+    bool setState = false;                  // desired (set) state of the balancer (either by this sketch or received by MQTT message)
+    bool Auto = false;                      // Automatic mode (enable/disable by MQTT)
+    bool AlarmMode = false;                 // Alarm mode (AlrmCdiff reached); auto mode will be disabled if triggered
+    int CVOn = DEF_BAL_ON_CELLV;            // Minimum single cell voltage at which to enable balancer (configured via MQTT topic)
+    int CVOff = DEF_BAL_OFF_CELLV;          // Min. single cell voltage at which to disable balancer (configured via MQTT topic)
+    int CdiffOn = DEF_BAL_ON_CELLDIFF;      // Minimum celldiff (diff between highest and lowest cell voltage) at which to enable balancer (configured via MQTT topic)
+    int AlrmCdiff = DEF_BAL_ALARM_CELLDIFF; // Maximum celldiff at which to start balancer in alarm mode (configured via MQTT topic)
+    int NoAlrmCdiff = DEF_BAL_NO_ALARM_CD;  // Celldiff at which to leave balancer alarm mode
+};
+
+// Config struct for PV specific settings
+struct PV_Config
+{
+    int PwrLvl = 0;    // current power level (0=low, 1=medium, 2=high)
+    int LowPPV = 100;  // < Avg_PPV considered as low (configured via MQTT topic)
+    int HighPPV = 300; // > Avg_PPV considered as high (configured via MQTT topic)
+};
+
+//
+// Global Structs
+//
+extern Load_SSR_Config SSR1; // Config struct for SSR1
+extern Load_SSR_Config SSR3; // Config struct for SSR3
+extern Balancer_Config SSR2; // Config struct for SSR2
+extern PV_Config PV;         // Config struct for PV related stuff
 
 #endif // USER_CONFIG_H
