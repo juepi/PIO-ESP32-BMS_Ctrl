@@ -38,6 +38,7 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Both data frame arrays of the VeDirectFrameHandler (Charger and SmartShunt) keep increasing over time due to transmission/decoding errors (I assume!) leading to new (non-existing) data labels/values that are added to the arrays. VeDirectFrameHandler maxes out at 40 Labels, so this should not lead to any problems (in terms of buffer overflow), not sure how this is possible however as every frame has a checksum. Due to this problem, also garbage values will be decoded every now and then, so I've added additional validity checks when new data was received (especially SoC).
 - VeDirectFrameHandler data from the SmartShunt is "sorted" randomly in the veValue/veName arrays, which breaks the "hardcoded" index numbers I used to get the values from the data arrays. I've fixed this by adding a function to the library that allows you to fetch the arrays index number from a given veName tag. I've not encountered this behavior with the SmartSolar charger yet.
 - OneWire doesn't seem to work on high-numbered GPIO pins (tested with > 36); using IO4 works fine!
+- Need to implement "no-network fallback mode" (no WiFi / no broker) - controller currently resets at MQTT broker conection loss (after some connection attempts); should work in fallback mode without network connectivity (also at firmware boot)
 
 
 # Version History
@@ -86,6 +87,11 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - OTA Updates are now mandatory
 - Removed MQTT control of Daly BMS FETs (they are a safety feature, you shouldn't mess with them manually)
 - Added additional safety features (Balancer alarm mode for high cellDiff, load shutdown for minimum battery voltage)
+
+## v2.2.1
+- Re-added periodic publishing of SSR states (basically for plots in FHEM)
+- Bugfix on SSR state handling at firmware boot
+
 
 # NOTE on missing VeDirectFrameHandler library
 

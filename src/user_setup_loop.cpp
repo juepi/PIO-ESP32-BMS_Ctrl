@@ -450,6 +450,10 @@ void user_loop()
       mqttClt.publish(t_Ctrl_StatT, String("Startup Firmware v" + String(FIRMWARE_VERSION) + " WiFi RSSI: " + String(WiFi.RSSI())).c_str(), true);
     }
     mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
+    // Publish SSR states periodically (logging / plots for FHEM)
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_actState, String(Bool_Decoder[(int)SSR1.actState]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR2_actState, String(Bool_Decoder[(int)SSR2.actState]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_actState, String(Bool_Decoder[(int)SSR3.actState]).c_str(), true);
 
     // Daly BMS
     if (BMS.ConnStat <= 1)
@@ -576,10 +580,19 @@ void user_loop()
   // If SOC has reached the configured charge limit, enable load
   if (FirstLoop)
   {
-    if (SSR1.Auto && (VSS.SOC > SSR1.BootOnSOC))
+    if (SSR1.Auto)
     {
-      SSR1.setState = true;
-      mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+      if (VSS.SOC > SSR1.BootOnSOC)
+      {
+        SSR1.setState = true;
+        mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+      }
+      else
+      {
+        SSR1.setState = false;
+        // Publish setState, might be ON on broker
+        mqttClt.publish(t_Ctrl_Cfg_SSR1_setState, String(Bool_Decoder[(int)SSR1.setState]).c_str(), true);
+      }
     }
   }
   else
@@ -634,10 +647,19 @@ void user_loop()
   // If SOC has reached the configured charge limit, enable load
   if (FirstLoop)
   {
-    if (SSR3.Auto && (VSS.SOC > SSR3.BootOnSOC))
+    if (SSR3.Auto)
     {
-      SSR3.setState = true;
-      mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+      if (VSS.SOC > SSR3.BootOnSOC)
+      {
+        SSR3.setState = true;
+        mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+      }
+      else
+      {
+        SSR3.setState = false;
+        // Publish setState, might be ON on broker
+        mqttClt.publish(t_Ctrl_Cfg_SSR3_setState, String(Bool_Decoder[(int)SSR3.setState]).c_str(), true);
+      }
     }
   }
   else

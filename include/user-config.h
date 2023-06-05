@@ -65,7 +65,7 @@ extern DallasTemperature OWtemp;
 #ifdef ENA_ONEWIRE           // Optional OneWire support - doesn't work yet (doesn't detect sensor)!
 #define PIN_OWDATA 4         // GPIO for OneWire communication (Note: high GPIOs >36 do not work!)
 #define OWRES 9              // Use 9 bits resolution (0.5°C)
-#define NUM_OWTEMP 2         // Amount of connected DS18B20 sensors
+#define NUM_OWTEMP 3         // Amount of connected DS18B20 sensors
 #define OW_UPDATE_INTERVAL 5 // sensor readout interval in seconds
 #define OW_TIMEOUT 60        // If no data update for all sensors occur within this timespan (seconds), connection to OneWire considered dead
 // MQTT Topics for published data
