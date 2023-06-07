@@ -255,7 +255,7 @@ void user_loop()
             if (abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC * 10) > VSS_MAX_SOC_DIFF)
             {
               // Unplausible increase or decrease of SOC - discard data
-              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard2:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), true);
+              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard").c_str(), true);
               VSS.ConnStat = 3;
             }
             else
@@ -268,7 +268,7 @@ void user_loop()
         else
         {
           // Unplausible SOC decoded
-          mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard1:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), true);
+          mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard").c_str(), true);
           VSS.ConnStat = 3;
         }
       }
@@ -364,8 +364,8 @@ void user_loop()
       OW.ReadOk = true;
       for (int i = 0; i < NUM_OWTEMP; i++)
       {
-        OW.Sensors[i] = OWtemp.getTempCByIndex(i);
-        if (OW.Sensors[i] == DEVICE_DISCONNECTED_C || OW.Sensors[i] == DEVICE_FAULT_OPEN_C)
+        OW.Temperature[i] = OWtemp.getTempCByIndex(i);
+        if (OW.Temperature[i] == DEVICE_DISCONNECTED_C || OW.Temperature[i] == DEVICE_FAULT_OPEN_C)
         {
           // sensor read fault - end this read cycle
           OW.ReadOk = false;
@@ -559,7 +559,7 @@ void user_loop()
       {
         int j = i + 1;
         String MqttTopStr = String(t_OW_TEMP_Templ) + String(j);
-        mqttClt.publish(MqttTopStr.c_str(), String(OW.Sensors[i], 0).c_str(), true);
+        mqttClt.publish(MqttTopStr.c_str(), String(OW.Temperature[i], 0).c_str(), true);
       }
       mqttClt.publish(t_OW_CSTAT, String(ConnStat_Decoder[OW.ConnStat]).c_str(), true);
     }
@@ -569,6 +569,13 @@ void user_loop()
       mqttClt.publish(t_OW_CSTAT, String(ConnStat_Decoder[OW.ConnStat]).c_str(), true);
     }
 #endif // ENA_ONEWIRE
+
+    // Report network outage recovery (once)
+    if (NetRecoveryMillis >= 0)
+    {
+      mqttClt.publish(t_Ctrl_StatT, String("Net_Outage_Recovered: " + String(UptimeSeconds, 0)).c_str(), true);
+      NetRecoveryMillis = 0;
+    }
 
     // Add some more delay for WiFi processing
     delay(100);

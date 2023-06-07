@@ -19,10 +19,6 @@
 // Message buffer for incoming Data from MQTT subscriptions
 extern char message_buff[20];
 
-// Keep an eye on subscribed / received topics
-extern unsigned int SubscribedTopics;
-extern unsigned int ReceivedTopics;
-
 // MQTT Topic Tree prepended to all topics
 // ATTN: Must end with "/"!
 #define TOPTREE "HB7/UG/BMS/"

@@ -18,15 +18,44 @@ void loop()
 {
   static unsigned long start_user_loop = 0;
   static unsigned long duration_user_loop = 0;
-  //delay(200);
-  // Check connection to MQTT broker, subscribe and update topics
-  MqttUpdater();
+  static unsigned long netfail_reconn_millis = 0;
 
-  // Handle OTA updates
-  if (OTAUpdateHandler())
+  // Handle network / MQTT broker connection failures (NET_OUTAGE=1)
+  if (NetFailure)
   {
-    // OTA Update in progress, restart main loop
-    return;
+    // Currently no network available, try to recover
+    if (millis() >= netfail_reconn_millis)
+    {
+      if (WiFi.isConnected())
+      {
+        // Try to reconnect to Broker
+        MqttUpdater();
+      }
+      if (NetFailure)
+      {
+        // Still no network available, try to recover every NET_RECONNECT_INTERVAL
+        netfail_reconn_millis = millis() + NET_RECONNECT_INTERVAL;
+      }
+      else
+      {
+        // Recovered from network outage
+        NetRecoveryMillis = millis();
+        netfail_reconn_millis = 0;
+      }
+    }
+  }
+
+  if (!NetFailure)
+  {
+    // Check connection to MQTT broker, subscribe and update topics
+    MqttUpdater();
+
+    // Handle OTA updates
+    if (OTAUpdateHandler())
+    {
+      // OTA Update in progress, restart main loop
+      return;
+    }
   }
 
   // Run user specific loop and measure duration
@@ -57,8 +86,6 @@ void loop()
   WiFi.disconnect();
   ESP.deepSleep(DS_DURATION_MIN * 60000000);
   // ATTN: Sketch continues to run for a short time after initiating DeepSleep, so pause here
-  //delay(5000);
-#else
-  //DEBUG_PRINTLN("Loop finished, DeepSleep disabled. Restarting..");
+  delay(5000);
 #endif
 }

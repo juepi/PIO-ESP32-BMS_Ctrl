@@ -137,8 +137,8 @@ extern DallasTemperature OWtemp;
 // Default settings, Updated by MQTT Topics at firmware boot
 #define DEF_BAL_ON_CELLDIFF 30     // If cell voltage difference is higher than this [mV] AND
 #define DEF_BAL_ON_CELLV 3400      // if a cell has reached this voltage level [mV], enable the balancer
-#define DEF_BAL_OFF_CELLV 3200     // DISABLE balancer if a cell has fallen below this voltage level [mV]
-#define DEF_BAL_ALARM_CELLDIFF 300 // If cell voltage difference is higher than this force-enable balancer
+#define DEF_BAL_OFF_CELLV 3150     // DISABLE balancer if a cell has fallen below this voltage level [mV]
+#define DEF_BAL_ALARM_CELLDIFF 100 // If cell voltage difference is higher than this force-enable balancer
 #define DEF_BAL_NO_ALARM_CD 10     // Exit alarm mode when Celldiff drops below this threshold
 
 // MQTT Publish only
@@ -271,11 +271,11 @@ struct Daly_BMS_data
 #ifdef ENA_ONEWIRE // Optional OneWire support
 struct OneWire_data
 {
-    // Array for OneWire Temperature Sensor(s) addresses
-    float Sensors[NUM_OWTEMP] = {0};
-    int ConnStat = 0;
-    uint32_t lastUpdate = 0;
-    uint32_t lastValid = 0;
+    // Array for OneWire temperature sensor values
+    float Temperature[NUM_OWTEMP] = {0};
+    int ConnStat = 0;        // Connection status
+    uint32_t lastUpdate = 0; // to verify connection is active
+    uint32_t lastValid = 0;  // uptime of last valid readout
     bool ReadOk = true;
 };
 #endif

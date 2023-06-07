@@ -9,8 +9,8 @@
 
 // Firmware Information
 #define FIRMWARE_NAME "PIO ESP32 Daly BMS Controller"
-#define FIRMWARE_VERSION "2.2.1"
-#define TEMPLATE_VERSION "1.1.0"
+#define FIRMWARE_VERSION "2.3.0"
+#define TEMPLATE_VERSION "1.2.0"
 
 // Serial Output configuration
 //

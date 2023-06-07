@@ -74,8 +74,10 @@ void MqttUpdater()
         if (MqttConnectToBroker())
         {
             // New connection to broker, fetch topics
-            // ATTN: will run endlessly if subscribed topics
-            // does not have retained messages and no one posts a message
+            // ATTN: will run endlessly if not all subscribed topics
+            // have retained messages and no one posts a message (disable in platformio.ini)
+            NetFailure = false;
+#ifdef WAIT_FOR_SUBSCRIPTIONS
             DEBUG_PRINT("Waiting for messages..");
             bool MissingTopics = true;
             while (MissingTopics)
@@ -99,6 +101,7 @@ void MqttUpdater()
 #endif
                 }
             }
+#endif // WAIT_FOR_SUBSCRIPTIONS
             DEBUG_PRINTLN("");
             DEBUG_PRINTLN("Messages for all subscribed topics received.");
         }
@@ -112,7 +115,15 @@ void MqttUpdater()
             ESP.deepSleep(DS_DURATION_MIN * 60000000);
             delay(3000);
 #else
-            ESP.restart();
+            if (NetFailAction == 0)
+            {
+                ESP.restart();
+            }
+            else
+            {
+                DEBUG_PRINTLN("Unable to connect to Broker, continuing");
+                NetFailure = true;
+            }
 #endif
         }
     }
