@@ -104,7 +104,6 @@ extern DallasTemperature OWtemp;
 #define DEF_OFF_LOAD_SOC 10   // Default SOC at which to disable the load
 #define DEF_LP_ON_LOAD_SOC 90 // SOC at which to enable the load at low PV power
 #define DEF_HP_ON_LOAD_SOC 60 // SOC at which to enable the load at high PV power
-#define DEF_BOOT_ON_SOC 90    // If SOC is >= this value, load will be enabled at firmware startup
 
 // MQTT Publish only
 #define t_Ctrl_Cfg_SSR1_actState TOPTREE "Cfg/SSR1_actState" // Actual state of SSR1 GPIO (on/off)
@@ -290,7 +289,6 @@ struct Load_SSR_Config
     int LPOffSOC = DEF_OFF_LOAD_SOC;  // Low PV power OFF SOC (configured via MQTT topic)
     int HPOnSOC = DEF_HP_ON_LOAD_SOC; // High PV power ON SOC (configured via MQTT topic)
     int HPOffSOC = DEF_OFF_LOAD_SOC;  // High PV power OFF SOC (configured via MQTT topic)
-    int BootOnSOC = DEF_BOOT_ON_SOC;  // SOC at which to enable SSR at firmware boot (configured via MQTT topic)
 };
 
 // Config struct for balancer (SSR2)

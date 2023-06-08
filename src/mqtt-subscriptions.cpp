@@ -20,7 +20,7 @@
 // .[Bool|Int|Float]Ptr: Pointer to a global var (according to "Type") where the decoded message info will be stored 
 //
 
-const int SubscribedTopicCnt = 24; // Overall amount of topics to subscribe to
+const int SubscribedTopicCnt = 22; // Overall amount of topics to subscribe to
 
 MqttSubCfg MqttSubscriptions[SubscribedTopicCnt]={
     // OTA Topics
@@ -33,7 +33,6 @@ MqttSubCfg MqttSubscriptions[SubscribedTopicCnt]={
     {.Topic = t_Ctrl_Cfg_SSR1_LPOffSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR1.LPOffSOC },
     {.Topic = t_Ctrl_Cfg_SSR1_HPOnSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR1.HPOnSOC },
     {.Topic = t_Ctrl_Cfg_SSR1_HPOffSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR1.HPOffSOC },
-    {.Topic = t_Ctrl_Cfg_SSR1_BootOnSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR1.BootOnSOC },
     // SSR3
     {.Topic = t_Ctrl_Cfg_SSR3_setState, .Type = 0, .Subscribed = false, .MsgRcvd = false, .BoolPtr = &SSR3.setState },
     {.Topic = t_Ctrl_Cfg_SSR3_Auto, .Type = 0, .Subscribed = false, .MsgRcvd = false, .BoolPtr = &SSR3.Auto },
@@ -41,7 +40,6 @@ MqttSubCfg MqttSubscriptions[SubscribedTopicCnt]={
     {.Topic = t_Ctrl_Cfg_SSR3_LPOffSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR3.LPOffSOC },
     {.Topic = t_Ctrl_Cfg_SSR3_HPOnSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR3.HPOnSOC },
     {.Topic = t_Ctrl_Cfg_SSR3_HPOffSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR3.HPOffSOC },
-    {.Topic = t_Ctrl_Cfg_SSR3_BootOnSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR3.BootOnSOC },
     // SSR2
     {.Topic = t_Ctrl_Cfg_SSR2_setState, .Type = 0, .Subscribed = false, .MsgRcvd = false, .BoolPtr = &SSR2.setState },
     {.Topic = t_Ctrl_Cfg_SSR2_Auto, .Type = 0, .Subscribed = false, .MsgRcvd = false, .BoolPtr = &SSR2.Auto },

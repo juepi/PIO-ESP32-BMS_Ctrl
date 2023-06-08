@@ -38,6 +38,7 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Both data frame arrays of the VeDirectFrameHandler (Charger and SmartShunt) keep increasing over time due to transmission/decoding errors (I assume!) leading to new (non-existing) data labels/values that are added to the arrays. VeDirectFrameHandler maxes out at 40 Labels, so this should not lead to any problems (in terms of buffer overflow), not sure how this is possible however as every frame has a checksum. Due to this problem, also garbage values will be decoded every now and then, so I've added additional validity checks when new data was received (especially SoC).
 - VeDirectFrameHandler data from the SmartShunt is "sorted" randomly in the veValue/veName arrays, which breaks the "hardcoded" index numbers I used to get the values from the data arrays. I've fixed this by adding a function to the library that allows you to fetch the arrays index number from a given veName tag. I've not encountered this behavior with the SmartSolar charger yet.
 - OneWire doesn't seem to work on high-numbered GPIO pins (tested with > 36); using IO4 works fine!
+- It seems (in version **v2.3.0**) that a high frequency toggling of SSR3 relay occured at firmware boot - i have not been able to identify the root cause, it seemed to happen only when SSR3 has been enabled automatically at firmware boot. I think this might occur when changing the SSRs "setState" Topic on the broker (and in the sketch) - after setting, the value is re-read by the firmware as soon as the broker sends out the received value. As the dedicated "on firmware boot" handling of the SSR states was unneccessary anyways, i have completely removed it (**v2.3.1**) and added some additional delay when sending the SSR setStates to the broker in addition to publishing the initial "all off" state to the MQTT broker at firmware boot. The error does not seem to occur any more.
 
 
 # Version History
@@ -93,6 +94,11 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 
 ## v2.3.0
 - Added ability to run without WiFi / MQTT broker connection (based on [**PIO-ESP32-Template v1.2.0**](https://github.com/juepi/PIO-ESP32-Template))
+
+## v2.3.1
+- Removed unneccesary SSR handling at firmware boot (just let auto-mode do the magic)
+- Setting all SSR state topics to "OFF" on the broker at startup to match the actual firmware boot state 
+- High frequency toggling of SSR3 state at firmware boot hopefully fixed
 
 # NOTE on missing VeDirectFrameHandler library
 

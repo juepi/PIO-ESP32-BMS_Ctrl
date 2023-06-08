@@ -125,7 +125,15 @@ void user_loop()
   // on boot, wait a second to ensure we have received data from the VE.Direct devices
   if (FirstLoop)
   {
-    delay(1000);
+    // Publish initial SSR active and desired states to the broker to match the firmware boot state of ALL OFF
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_setState, String(Bool_Decoder[0]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_actState, String(Bool_Decoder[0]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR2_setState, String(Bool_Decoder[0]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR2_actState, String(Bool_Decoder[0]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_setState, String(Bool_Decoder[0]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_actState, String(Bool_Decoder[0]).c_str(), true);
+    // Use MqttDelay to ensure that we re-read the freshly published settings from the broker
+    MqttDelay(1000);
   }
 
   //
@@ -571,9 +579,9 @@ void user_loop()
 #endif // ENA_ONEWIRE
 
     // Report network outage recovery (once)
-    if (NetRecoveryMillis >= 0)
+    if (NetRecoveryMillis > 0)
     {
-      mqttClt.publish(t_Ctrl_StatT, String("Net_Outage_Recovered: " + String(UptimeSeconds, 0)).c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("Net_Outage_Recovered: " + String(UptimeSeconds)).c_str(), true);
       NetRecoveryMillis = 0;
     }
 
@@ -585,43 +593,23 @@ void user_loop()
   // Load Controller (SSR1)
   //
   // If SOC has reached the configured charge limit, enable load
-  if (FirstLoop)
+  if (SSR1.Auto && !SSR1.actState)
   {
-    if (SSR1.Auto)
+    // Auto mode enabled, SSR1 disabled, check PV power state
+    switch (PV.PwrLvl)
     {
-      if (VSS.SOC > SSR1.BootOnSOC)
+    case 0 ... 1: // Low and medium power
+      if (VSS.SOC > SSR1.LPOnSOC)
       {
         SSR1.setState = true;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
       }
-      else
+      break;
+    case 2: // high power
+      if (VSS.SOC > SSR1.HPOnSOC)
       {
-        SSR1.setState = false;
-        // Publish setState, might be ON on broker
-        mqttClt.publish(t_Ctrl_Cfg_SSR1_setState, String(Bool_Decoder[(int)SSR1.setState]).c_str(), true);
-      }
-    }
-  }
-  else
-  {
-    if (SSR1.Auto && !SSR1.actState)
-    {
-      // Auto mode enabled, SSR1 disabled, check PV power state
-      switch (PV.PwrLvl)
-      {
-      case 0 ... 1: // Low and medium power
-        if (VSS.SOC > SSR1.LPOnSOC)
-        {
-          SSR1.setState = true;
-          mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
-        }
-        break;
-      case 2: // high power
-        if (VSS.SOC > SSR1.HPOnSOC)
-        {
-          SSR1.setState = true;
-          mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
-        }
+        SSR1.setState = true;
+        mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
       }
     }
   }
@@ -652,43 +640,23 @@ void user_loop()
   // Load Controller (SSR3)
   //
   // If SOC has reached the configured charge limit, enable load
-  if (FirstLoop)
+  if (SSR3.Auto && !SSR3.actState)
   {
-    if (SSR3.Auto)
+    // Auto mode enabled, SSR1 disabled, check PV power state
+    switch (PV.PwrLvl)
     {
-      if (VSS.SOC > SSR3.BootOnSOC)
+    case 0 ... 1: // Low and medium power
+      if (VSS.SOC > SSR3.LPOnSOC)
       {
         SSR3.setState = true;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_Boot_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
       }
-      else
+      break;
+    case 2: // high power
+      if (VSS.SOC > SSR3.HPOnSOC)
       {
-        SSR3.setState = false;
-        // Publish setState, might be ON on broker
-        mqttClt.publish(t_Ctrl_Cfg_SSR3_setState, String(Bool_Decoder[(int)SSR3.setState]).c_str(), true);
-      }
-    }
-  }
-  else
-  {
-    if (SSR3.Auto && !SSR3.actState)
-    {
-      // Auto mode enabled, SSR1 disabled, check PV power state
-      switch (PV.PwrLvl)
-      {
-      case 0 ... 1: // Low and medium power
-        if (VSS.SOC > SSR3.LPOnSOC)
-        {
-          SSR3.setState = true;
-          mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
-        }
-        break;
-      case 2: // high power
-        if (VSS.SOC > SSR3.HPOnSOC)
-        {
-          SSR3.setState = true;
-          mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
-        }
+        SSR3.setState = true;
+        mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
       }
     }
   }
@@ -856,6 +824,7 @@ void user_loop()
     // and publish states immediately for better responsiveness in UI
     mqttClt.publish(t_Ctrl_Cfg_SSR1_setState, String(Bool_Decoder[(int)SSR1.setState]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR1_actState, String(Bool_Decoder[(int)SSR1.actState]).c_str(), true);
+    delay(100);
   }
 
   //
@@ -868,6 +837,7 @@ void user_loop()
     // and publish states immediately for better responsiveness in UI
     mqttClt.publish(t_Ctrl_Cfg_SSR2_setState, String(Bool_Decoder[(int)SSR2.setState]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR2_actState, String(Bool_Decoder[(int)SSR2.actState]).c_str(), true);
+    delay(100);
   }
 
   //
@@ -880,6 +850,7 @@ void user_loop()
     // and publish states immediately for better responsiveness in UI
     mqttClt.publish(t_Ctrl_Cfg_SSR3_setState, String(Bool_Decoder[(int)SSR3.setState]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_actState, String(Bool_Decoder[(int)SSR3.actState]).c_str(), true);
+    delay(100);
   }
 
   // Reset FirstLoop
