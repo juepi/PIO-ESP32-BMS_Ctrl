@@ -46,8 +46,9 @@ MqttSubCfg MqttSubscriptions[SubscribedTopicCnt]={
     {.Topic = t_Ctrl_Cfg_SSR2_CVOn, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR2.CVOn },
     {.Topic = t_Ctrl_Cfg_SSR2_CVOff, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR2.CVOff },
     {.Topic = t_Ctrl_Cfg_SSR2_CdiffOn, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR2.CdiffOn },
-    {.Topic = t_Ctrl_Cfg_SSR2_AlrmCdiff, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR2.AlrmCdiff },
     // PV
     {.Topic = t_Ctrl_Cfg_PV_LowPPV, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &PV.LowPPV },
-    {.Topic = t_Ctrl_Cfg_PV_HighPPV, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &PV.HighPPV }
+    {.Topic = t_Ctrl_Cfg_PV_HighPPV, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &PV.HighPPV },
+    // Safety
+    {.Topic = t_Ctrl_Cfg_Safety_CritCdiff, .Type = 2, .Subscribed = false, .MsgRcvd = false, .FloatPtr = &Safety.Crit_CVdiff }
 };

@@ -28,6 +28,7 @@ Load_SSR_Config SSR1;
 Load_SSR_Config SSR3;
 Balancer_Config SSR2;
 PV_Config PV;
+Safety_Config Safety;
 
 /*
  * User Setup Function
@@ -97,6 +98,8 @@ void user_loop()
   static bool FirstLoop = true; // Firmware startup
   // Daly BMS
   static Daly_BMS_data BMS;
+  static int CDiff_Unplausible_Cnt = 0;
+  static float Prev_CDiff = 0;
   // Uptime calculation
   static uint32_t UptimeSeconds = 0;
   static unsigned long oldMillis = 0;
@@ -332,6 +335,39 @@ void user_loop()
       // data set received
       BMS.lastValid = UptimeSeconds;
       BMS.ConnStat = 1;
+
+      // Verify Cell difference
+      if (FirstLoop)
+      {
+        Prev_CDiff = Daly.get.cellDiff;
+      }
+      else
+      {
+        // compare against previous readout
+        if (abs(Prev_CDiff - Daly.get.cellDiff) > MAX_CDIFF_DIFF)
+        {
+          if (CDiff_Unplausible_Cnt >= MAX_IGNORED_CDIFF)
+          {
+            // although unrealistic, we have to assume the readout is correct after several retries..
+            CDiff_Unplausible_Cnt = 0;
+            Prev_CDiff = Daly.get.cellDiff;
+          }
+          else
+          {
+            // unrealistic change, increase error counter
+            CDiff_Unplausible_Cnt++;
+            // and reset to previous value
+            Daly.get.cellDiff = Prev_CDiff;
+            mqttClt.publish(t_Ctrl_StatT, String("Daly_Cdiff_Discard").c_str(), true);
+          }
+        }
+        else
+        {
+          // new value seems ok
+          CDiff_Unplausible_Cnt = 0;
+          Prev_CDiff = Daly.get.cellDiff;
+        }
+      }
     }
     else
     {
@@ -372,12 +408,19 @@ void user_loop()
       OW.ReadOk = true;
       for (int i = 0; i < NUM_OWTEMP; i++)
       {
-        OW.Temperature[i] = OWtemp.getTempCByIndex(i);
-        if (OW.Temperature[i] == DEVICE_DISCONNECTED_C || OW.Temperature[i] == DEVICE_FAULT_OPEN_C)
+        float ReadT = OWtemp.getTempCByIndex(i);
+        if (ReadT == DEVICE_DISCONNECTED_C || ReadT == DEVICE_FAULT_OPEN_C)
         {
           // sensor read fault - end this read cycle
+          // Do not update temperature readout array in case of read fault
+          // to avoid false-positives on temperature error handling
           OW.ReadOk = false;
           break;
+        }
+        else
+        {
+          // Readout valid, update temperature array
+          OW.Temperature[i] = ReadT;
         }
       }
       if (OW.ReadOk)
@@ -684,34 +727,6 @@ void user_loop()
   }
 
   //
-  // SAFETY CHECKS
-  //
-  // Disable loads when communication to VSS or Daly-BMS timed out
-  if ((SSR1.actState || SSR3.actState) && (VSS.ConnStat == 2 || BMS.ConnStat == 2))
-  {
-    SSR1.setState = false;
-    SSR3.setState = false;
-    // disable Auto mode when comm fails
-    SSR1.Auto = false;
-    SSR3.Auto = false;
-    mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
-    mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
-    mqttClt.publish(t_Ctrl_StatT, String("SSR1+3_OFF_SAFETY_CSTAT:" + String(VSS.ConnStat) + "/" + String(BMS.ConnStat)).c_str(), true);
-  }
-  // Disable loads when battery pack voltage is below critical threshold
-  if ((SSR1.actState || SSR3.actState) && Daly.get.packVoltage <= SAFETY_BAT_MIN_V)
-  {
-    SSR1.setState = false;
-    SSR3.setState = false;
-    // disable Auto mode
-    SSR1.Auto = false;
-    SSR3.Auto = false;
-    mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
-    mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
-    mqttClt.publish(t_Ctrl_StatT, String("SSR1+3_OFF_SAFETY_LOW_VBAT:" + String(Daly.get.packVoltage) + "V").c_str(), true);
-  }
-
-  //
   // Active Balancer Controller (SSR2)
   //
   if (SSR2.Auto)
@@ -753,34 +768,173 @@ void user_loop()
     }
   }
 
-  // SAFETY: Enable Balancer at any time if Celldiff is extremely high
-  if ((Daly.get.cellDiff > SSR2.AlrmCdiff) && !SSR2.AlarmMode)
+  //
+  // SAFETY CHECKS
+  //
+  // Disable loads and auto-modes when communication to VSS, Daly-BMS or OW-sensors timed out
+#ifdef ENA_ONEWIRE // Optional OneWire support
+  if (!Safety.ConnStateCritical && (VSS.ConnStat == 2 || BMS.ConnStat == 2 || OW.ConnStat == 2))
+#else
+  if (!Safety.ConnStateCritical && (VSS.ConnStat == 2 || BMS.ConnStat == 2))
+#endif
   {
-    SSR2.AlarmMode = true;
-    SSR2.Auto = false;
-    SSR2.setState = true;
-    mqttClt.publish(t_Ctrl_Cfg_SSR2_Auto, String(Bool_Decoder[(int)SSR2.Auto]).c_str(), true);
-    mqttClt.publish(t_Ctrl_StatT, String("SSR2_ON_SAFETY_Diff:" + String((Daly.get.cellDiff))).c_str(), true);
+    Safety.ConnStateCritical = true;
+    SSR1.setState = false;
+    SSR3.setState = false;
+    SSR1.Auto = false;
+    SSR3.Auto = false;
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
+#ifdef ENA_ONEWIRE // Optional OneWire support
+    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CONNSTAT:" + String(VSS.ConnStat) + "/" + String(BMS.ConnStat) + "/" + String(OW.ConnStat)).c_str(), true);
+#else
+    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CONNSTAT:" + String(VSS.ConnStat) + "/" + String(BMS.ConnStat)).c_str(), true);
+#endif
+  }
+  // Check if communcation has been restored to all devices
+#ifdef ENA_ONEWIRE // Optional OneWire support
+  if (Safety.ConnStateCritical && VSS.ConnStat == 1 && BMS.ConnStat == 1 && OW.ConnStat == 1)
+#else
+  if (Safety.ConnStateCritical && VSS.ConnStat == 1 || BMS.ConnStat == 1)
+#endif
+  {
+    Safety.ConnStateCritical = false;
+    SSR1.Auto = true;
+    SSR3.Auto = true;
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
+#ifdef ENA_ONEWIRE // Optional OneWire support
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CONNSTAT").c_str(), true);
+#else
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CONNSTAT").c_str(), true);
+#endif
   }
 
-  // Check if Balancer Alarm mode can be left
-  if (SSR2.AlarmMode)
+  // Disable loads and auto-modes when battery pack voltage is below critical threshold
+  if (!Safety.LowBatVCritical && Daly.get.packVoltage <= Safety.Crit_Bat_Low_V)
   {
-    if (Daly.get.cellDiff < SSR2.NoAlrmCdiff)
+    Safety.LowBatVCritical = true;
+    SSR1.setState = false;
+    SSR3.setState = false;
+    SSR1.Auto = false;
+    SSR3.Auto = false;
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("CRIT_SAFETY_LOW_VBAT:" + String(Daly.get.packVoltage, 1) + "V").c_str(), true);
+  }
+  // Check if we recovered from undervoltage critical condition
+  if (Safety.LowBatVCritical && Daly.get.packVoltage > Safety.Rec_Bat_Low_V)
+  {
+    Safety.LowBatVCritical = false;
+    SSR1.Auto = true;
+    SSR3.Auto = true;
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_LOW_VBAT:" + String(Daly.get.packVoltage, 1) + "V").c_str(), true);
+  }
+
+  // Disable Loads and auto-modes if Celldiff is extremely high
+  if (!Safety.CVdiffCritical && Daly.get.cellDiff > Safety.Crit_CVdiff)
+  {
+    Safety.CVdiffCritical = true;
+    SSR1.Auto = false;
+    SSR2.Auto = false;
+    SSR3.Auto = false;
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR2_Auto, String(Bool_Decoder[(int)SSR2.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
+    SSR1.setState = false;
+    SSR3.setState = false;
+    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CDIFF:" + String(Daly.get.cellDiff, 0)).c_str(), true);
+  }
+  // Check if we recovered from Cell diff critical condition
+  if (Safety.CVdiffCritical && Daly.get.cellDiff < Safety.Rec_CVdiff)
+  {
+    Safety.CVdiffCritical = false;
+    SSR1.Auto = true;
+    SSR2.Auto = true;
+    SSR3.Auto = true;
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR2_Auto, String(Bool_Decoder[(int)SSR2.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CDIFF:" + String((Daly.get.cellDiff, 0))).c_str(), true);
+  }
+
+  //
+  // Temperature based SAFETY CHECKS
+  //
+  // Check Cell temperatures
+#ifdef ENA_ONEWIRE // Optional OneWire support
+  if (!Safety.CellTempCritical && (OW.Temperature[i_C1_SENS] > Safety.Crit_CellTemp || OW.Temperature[i_C8_SENS] > Safety.Crit_CellTemp || Daly.get.tempAverage > Safety.Crit_CellTemp))
+#else
+  if (!Safety.CellTempCritical && Daly.get.tempAverage > Safety.Crit_CellTemp)
+#endif
+  {
+    Safety.CellTempCritical = true;
+    if (PV.PwrLvl == 2)
     {
-      // Celldiff normalized, exit alarm mode and re-enable auto mode
-      SSR2.AlarmMode = false;
-      SSR2.Auto = true;
-      SSR2.setState = false;
-      mqttClt.publish(t_Ctrl_Cfg_SSR2_Auto, String(Bool_Decoder[(int)SSR2.Auto]).c_str(), true);
-      mqttClt.publish(t_Ctrl_StatT, String("SSR2_OFF_SAFETY_Diff:" + String((Daly.get.cellDiff))).c_str(), true);
+      // Cells probably overheated while charging, disable Daly Charge FET
+      BMS.setCSw = 0;
+      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP: BMS Charging disabled").c_str(), true);
+    }
+    else
+    {
+      // Cells probably overheated while discharging, disable loads
+      SSR1.Auto = false;
+      SSR3.Auto = false;
+      mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
+      mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
+      SSR1.setState = false;
+      SSR3.setState = false;
+      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP: Loads disabled").c_str(), true);
+#ifdef ENA_ONEWIRE // Optional OneWire support
+      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP:" + String(OW.Temperature[i_C1_SENS], 0) + "/" + String(Daly.get.tempAverage, 0) + "/" + String(OW.Temperature[i_C8_SENS], 0)).c_str(), true);
+#else
+      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP:" + String(Daly.get.tempAverage, 0)).c_str(), true);
+#endif
     }
   }
+  // Check if all cells recovered from ciritcal cell temperatures
+#ifdef ENA_ONEWIRE // Optional OneWire support
+  if (Safety.CellTempCritical && OW.Temperature[i_C1_SENS] < Safety.Rec_CellTemp && OW.Temperature[i_C8_SENS] < Safety.Rec_CellTemp && Daly.get.tempAverage < Safety.Rec_CellTemp)
+#else
+  if (Safety.CellTempCritical && Daly.get.tempAverage < Safety.Rec_CellTemp)
+#endif
+  {
+    Safety.CellTempCritical = false;
+    BMS.setCSw = 1;
+    SSR1.Auto = true;
+    SSR3.Auto = true;
+    mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
+    mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
+#ifdef ENA_ONEWIRE // Optional OneWire support
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CTEMP:" + String(OW.Temperature[i_C1_SENS], 0) + "/" + String(Daly.get.tempAverage, 0) + "/" + String(OW.Temperature[i_C8_SENS], 0)).c_str(), true);
+#else
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CTEMP:" + String(Daly.get.tempAverage, 0)).c_str(), true);
+#endif
+  }
+
+  // Check charger temperature (with OneWire only)
+#ifdef ENA_ONEWIRE // Optional OneWire support
+  if (!Safety.ChrgTempCritical && OW.Temperature[i_CHRG_SENS] > Safety.Crit_ChrgTemp)
+  {
+    // Charger too hot, disable charge FETs on BMS
+    Safety.ChrgTempCritical = true;
+    BMS.setCSw = 0;
+    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CHRGTEMP:" + String(OW.Temperature[i_CHRG_SENS], 0)).c_str(), true);
+  }
+  // Check if charger temperature recovered
+  if (Safety.ChrgTempCritical && OW.Temperature[i_CHRG_SENS] < Safety.Rec_ChrgTemp)
+  {
+    Safety.ChrgTempCritical = false;
+    BMS.setCSw = 1;
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CHRGTEMP:" + String(OW.Temperature[i_CHRG_SENS], 0)).c_str(), true);
+  }
+#endif
 
   //
   // Set desired Daly-BMS MOSFET states
   //
-  // NOTE: Currently unused, for future safety features
   if (BMS.setCSw < 2)
   {
     // Set desired Charge Switch state

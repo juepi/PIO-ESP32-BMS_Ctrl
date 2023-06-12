@@ -100,6 +100,14 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Setting all SSR state topics to "OFF" on the broker at startup to match the actual firmware boot state 
 - High frequency toggling of SSR3 state at firmware boot hopefully fixed
 
+## v2.4.0
+- Added error/recovery handling for over-temperature situations (OW-sensors and Daly BMS sensor)
+- Improved under-voltage and communication error/recovery handling
+- Removed Balancer Alarm mode, as balancing an empty battery does not make sense
+- Added additional safety check to turn off loads at high cell diff voltage (stopping discharge should probably not further increase cell diff)
+- Added verification of Daly celldiff readout (reports implausible high changes between 2 readouts in rare occurences)
+
+  
 # NOTE on missing VeDirectFrameHandler library
 
 I somehow managed to not to include the VeDirectFrameHandler library into previous commits as it was intended. **This affects all versions since adding VE.Direct support in v1.2.0!**  

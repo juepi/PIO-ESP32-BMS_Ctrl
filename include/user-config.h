@@ -60,14 +60,33 @@ extern DallasTemperature OWtemp;
 #define DATA_UPDATE_INTERVAL 120 // Send MQTT data ever x seconds
 
 //
+// SAFETY Features Thresholds
+//
+#define RECOVER_CELL_T 27.0f    // Recovery temperature threshold for cell temperatures
+#define CRIT_CELL_T 35.0f       // Critical temperature threshold for cell temperatures
+#define RECOVER_CHRG_T 32.0f    // Recovery temperature threshold for charger temperature
+#define CRIT_CHRG_T 40.0f       // Critical temperature threshold for charger temperature
+#define RECOVER_CELLDIFF 20.0f  // Recovery cell voltage difference (mV between highest and lowest cell)
+#define CRIT_CELLDIFF 100.0f    // Critical cell voltage difference
+#define RECOVER_BAT_LOW_V 25.4f // Recovery battery pack low voltage
+#define CRIT_BAT_LOW_V 24.4f    // Critical battery pack undervoltage
+
+// MQTT Topics (Subscriptions)
+#define t_Ctrl_Cfg_Safety_CritCdiff TOPTREE "Cfg/Safety_CritCdiff"
+
+//
 // OneWire Bus
 //
-#ifdef ENA_ONEWIRE           // Optional OneWire support - doesn't work yet (doesn't detect sensor)!
+#ifdef ENA_ONEWIRE           // Optional OneWire support
 #define PIN_OWDATA 4         // GPIO for OneWire communication (Note: high GPIOs >36 do not work!)
 #define OWRES 9              // Use 9 bits resolution (0.5°C)
 #define NUM_OWTEMP 3         // Amount of connected DS18B20 sensors
 #define OW_UPDATE_INTERVAL 5 // sensor readout interval in seconds
 #define OW_TIMEOUT 60        // If no data update for all sensors occur within this timespan (seconds), connection to OneWire considered dead
+#define i_C1_SENS 2          // DS18B20 sensor index for Cell 1 temperature (Hint: use a OneWire-temperature demo sketch to determine index values of your sensors!)
+#define i_C8_SENS 0          // DS18B20 sensor index for Cell 8 temperature
+#define i_CHRG_SENS 1        // DS18B20 sensor index for SmartSolar Charger
+
 // MQTT Topics for published data
 #define t_OW_TEMP_Templ TOPTREE "OW_T" // will be extended with sensor numbers starting at 1
 #define t_OW_CSTAT TOPTREE "OW_CSTAT"
@@ -83,8 +102,9 @@ extern DallasTemperature OWtemp;
 #define DALY_UPDATE_INTERVAL 5
 #define DALY_TIMEOUT 60 // If no data update occurs within this timespan (seconds), connection to Daly BMS considered dead
 
-// Battery Safety: Shutdown all loads when reaching this threshold
-#define SAFETY_BAT_MIN_V 24.8f
+// Max difference between 2 readouts of cell voltage diff
+#define MAX_CDIFF_DIFF 50.0f // readout with a higher difference to the previous readout will be discarded
+#define MAX_IGNORED_CDIFF 2  // if 2 subsequent readouts are "unrealistic", we have to assume that they aren't..
 
 // MQTT Publish only
 #define t_DSOC TOPTREE "Daly_SOC"      // BMS Battery State of Charge(useless, see current)
@@ -134,11 +154,9 @@ extern DallasTemperature OWtemp;
 // Active Balancer Settings (SSR2)
 //
 // Default settings, Updated by MQTT Topics at firmware boot
-#define DEF_BAL_ON_CELLDIFF 30     // If cell voltage difference is higher than this [mV] AND
-#define DEF_BAL_ON_CELLV 3400      // if a cell has reached this voltage level [mV], enable the balancer
-#define DEF_BAL_OFF_CELLV 3150     // DISABLE balancer if a cell has fallen below this voltage level [mV]
-#define DEF_BAL_ALARM_CELLDIFF 100 // If cell voltage difference is higher than this force-enable balancer
-#define DEF_BAL_NO_ALARM_CD 10     // Exit alarm mode when Celldiff drops below this threshold
+#define DEF_BAL_ON_CELLDIFF 30 // If cell voltage difference is higher than this [mV] AND
+#define DEF_BAL_ON_CELLV 3400  // if a cell has reached this voltage level [mV], enable the balancer
+#define DEF_BAL_OFF_CELLV 3150 // DISABLE balancer if a cell has fallen below this voltage level [mV]
 
 // MQTT Publish only
 #define t_Ctrl_Cfg_SSR2_actState TOPTREE "Cfg/SSR2_actState" // Actual state of SSR2 GPIO (on/off)
@@ -149,7 +167,6 @@ extern DallasTemperature OWtemp;
 #define t_Ctrl_Cfg_SSR2_CVOn TOPTREE "Cfg/SSR2_CVOn"
 #define t_Ctrl_Cfg_SSR2_CVOff TOPTREE "Cfg/SSR2_CVOff"
 #define t_Ctrl_Cfg_SSR2_CdiffOn TOPTREE "Cfg/SSR2_CdiffOn"
-#define t_Ctrl_Cfg_SSR2_AlrmCdiff TOPTREE "Cfg/SSR2_AlrmCdiff"
 
 //
 // Victron VE.Direct settings
@@ -161,6 +178,7 @@ extern DallasTemperature OWtemp;
 // SmartSolar 75/15 Charger settings (charger #1)
 #define PIN_VED_CHRG1_RX 33 // RX for SoftwareSerial
 #define PIN_VED_CHRG1_TX 21 // TX for SoftwareSerial (unused)
+
 // Array element indexes of VED_Chrg1.veValue which will be sent to the MQTT broker (ATTN: valid for SmartSolar 75/15 with firmware 1.61)
 // See Victron Documentation: https://www.victronenergy.com/support-and-downloads/technical-information# --> VE.Direct protocol
 #define i_CHRG_LBL_VB 3   // battery voltage
@@ -294,15 +312,12 @@ struct Load_SSR_Config
 // Config struct for balancer (SSR2)
 struct Balancer_Config
 {
-    bool actState = false;                  // Currently active state of the balancer SSR (GPIO)
-    bool setState = false;                  // desired (set) state of the balancer (either by this sketch or received by MQTT message)
-    bool Auto = false;                      // Automatic mode (enable/disable by MQTT)
-    bool AlarmMode = false;                 // Alarm mode (AlrmCdiff reached); auto mode will be disabled if triggered
-    int CVOn = DEF_BAL_ON_CELLV;            // Minimum single cell voltage at which to enable balancer (configured via MQTT topic)
-    int CVOff = DEF_BAL_OFF_CELLV;          // Min. single cell voltage at which to disable balancer (configured via MQTT topic)
-    int CdiffOn = DEF_BAL_ON_CELLDIFF;      // Minimum celldiff (diff between highest and lowest cell voltage) at which to enable balancer (configured via MQTT topic)
-    int AlrmCdiff = DEF_BAL_ALARM_CELLDIFF; // Maximum celldiff at which to start balancer in alarm mode (configured via MQTT topic)
-    int NoAlrmCdiff = DEF_BAL_NO_ALARM_CD;  // Celldiff at which to leave balancer alarm mode
+    bool actState = false;             // Currently active state of the balancer SSR (GPIO)
+    bool setState = false;             // desired (set) state of the balancer (either by this sketch or received by MQTT message)
+    bool Auto = false;                 // Automatic mode (enable/disable by MQTT)
+    int CVOn = DEF_BAL_ON_CELLV;       // Minimum single cell voltage at which to enable balancer (configured via MQTT topic)
+    int CVOff = DEF_BAL_OFF_CELLV;     // Min. single cell voltage at which to disable balancer (configured via MQTT topic)
+    int CdiffOn = DEF_BAL_ON_CELLDIFF; // Minimum celldiff (diff between highest and lowest cell voltage) at which to enable balancer (configured via MQTT topic)
 };
 
 // Config struct for PV specific settings
@@ -313,6 +328,24 @@ struct PV_Config
     int HighPPV = 300; // > Avg_PPV considered as high (configured via MQTT topic)
 };
 
+// Config struct for Safety features
+struct Safety_Config
+{
+    bool ConnStateCritical = false;
+    bool CellTempCritical = false;
+    bool ChrgTempCritical = false;
+    bool CVdiffCritical = false;
+    bool LowBatVCritical = false;
+    float Crit_CVdiff = CRIT_CELLDIFF;       // Maximum celldiff at which to disable the loads (configured via MQTT topic)
+    float Rec_CVdiff = RECOVER_CELLDIFF;     // Celldiff at which to resume loads (auto-mode for all SSR will be enabled)
+    float Crit_CellTemp = CRIT_CELL_T;       // Critical cell temperature at which to stop charging (if PPV is high) or disable loads
+    float Rec_CellTemp = RECOVER_CELL_T;     // Cell temperature at which to resume normal operation
+    float Crit_ChrgTemp = CRIT_CHRG_T;       // Critical charger temperature at which to stop charging (disable Daly Charge FETs)
+    float Rec_ChrgTemp = RECOVER_CHRG_T;     // Charger temperature at which to resume normal operation
+    float Crit_Bat_Low_V = CRIT_BAT_LOW_V;   // Critical battery pack undervoltage at which to disable the loads
+    float Rec_Bat_Low_V = RECOVER_BAT_LOW_V; // Battery pack low voltage at which to resume the loads (resume auto-modes)
+};
+
 //
 // Global Structs
 //
@@ -320,5 +353,6 @@ extern Load_SSR_Config SSR1; // Config struct for SSR1
 extern Load_SSR_Config SSR3; // Config struct for SSR3
 extern Balancer_Config SSR2; // Config struct for SSR2
 extern PV_Config PV;         // Config struct for PV related stuff
+extern Safety_Config Safety; // Config struct for safety features
 
 #endif // USER_CONFIG_H
