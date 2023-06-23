@@ -53,6 +53,7 @@ extern DallasTemperature OWtemp;
 // MQTT Topics for published data
 #define t_Ctrl_StatT TOPTREE "CtrlStatTXT" // ESP Controller status text provided through MQTT
 #define t_Ctrl_StatU TOPTREE "CtrlStatUpt" // ESP Controller uptime provided through MQTT
+#define t_Ctrl_Alarm TOPTREE "CtrlAlarm"   // Global alarm flag to signal fail states (any Safety *Critical flag = TRUE)
 
 //
 // MQTT Data update interval

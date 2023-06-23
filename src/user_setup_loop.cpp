@@ -266,7 +266,7 @@ void user_loop()
             if (abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC * 10) > VSS_MAX_SOC_DIFF)
             {
               // Unplausible increase or decrease of SOC - discard data
-              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), true);
+              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
               VSS.ConnStat = 3;
             }
             else
@@ -279,7 +279,7 @@ void user_loop()
         else
         {
           // Unplausible SOC decoded
-          mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Unplausible:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), true);
+          mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Unplausible:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
           VSS.ConnStat = 3;
         }
       }
@@ -318,7 +318,7 @@ void user_loop()
         VSS.RxFailCnt++;
         if (VSS.RxFailCnt > VED_RX_FAIL_CNT)
         {
-          mqttClt.publish(t_Ctrl_StatT, String("VSS reached VED_RX_FAIL_CNT, rebooting!").c_str(), true);
+          mqttClt.publish(t_Ctrl_StatT, String("VSS reached VED_RX_FAIL_CNT, rebooting!").c_str(), false);
           delay(200);
           ESP.restart();
         }
@@ -371,7 +371,7 @@ void user_loop()
             CDiff_Unplausible_Cnt++;
             // and reset to previous value
             Daly.get.cellDiff = Prev_CDiff;
-            mqttClt.publish(t_Ctrl_StatT, String("Daly_Cdiff_Discard").c_str(), true);
+            mqttClt.publish(t_Ctrl_StatT, String("Daly_Cdiff_Discard").c_str(), false);
           }
         }
         else
@@ -511,14 +511,23 @@ void user_loop()
     // Controller
     if (FirstLoop)
     {
-      mqttClt.publish(t_Ctrl_StatT, String("Startup Firmware v" + String(FIRMWARE_VERSION) + " WiFi RSSI: " + String(WiFi.RSSI())).c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("Startup Firmware v" + String(FIRMWARE_VERSION) + " WiFi RSSI: " + String(WiFi.RSSI())).c_str(), false);
     }
     mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
     // Publish SSR states periodically (logging / plots for FHEM)
     mqttClt.publish(t_Ctrl_Cfg_SSR1_actState, String(Bool_Decoder[(int)SSR1.actState]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR2_actState, String(Bool_Decoder[(int)SSR2.actState]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_actState, String(Bool_Decoder[(int)SSR3.actState]).c_str(), true);
-
+    // Set alarm flag if we're in a critical condition
+    if (Safety.CellTempCritical || Safety.ChrgTempCritical || Safety.ConnStateCritical || Safety.CVdiffCritical || Safety.LowBatVCritical)
+    {
+      mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[1]).c_str(), true);
+    }
+    else
+    {
+      mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[0]).c_str(), true);
+    }
+    
     // Daly BMS
     if (BMS.ConnStat <= 1)
     {
@@ -637,7 +646,7 @@ void user_loop()
     // Report network outage recovery (once)
     if (NetRecoveryMillis > 0)
     {
-      mqttClt.publish(t_Ctrl_StatT, String("Net_Outage_Recovered: " + String(UptimeSeconds)).c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("Net_Outage_Recovered: " + String(UptimeSeconds)).c_str(), false);
       NetRecoveryMillis = 0;
     }
 
@@ -658,14 +667,14 @@ void user_loop()
       if (VSS.SOC > SSR1.LPOnSOC)
       {
         SSR1.setState = true;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
       }
       break;
     case 2: // high power
       if (VSS.SOC > SSR1.HPOnSOC)
       {
         SSR1.setState = true;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
       }
     }
   }
@@ -680,14 +689,14 @@ void user_loop()
       if (VSS.SOC <= SSR1.LPOffSOC)
       {
         SSR1.setState = false;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
       }
       break;
     case 2: // high power
       if (VSS.SOC <= SSR1.HPOffSOC)
       {
         SSR1.setState = false;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
       }
     }
   }
@@ -705,14 +714,14 @@ void user_loop()
       if (VSS.SOC > SSR3.LPOnSOC)
       {
         SSR3.setState = true;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
       }
       break;
     case 2: // high power
       if (VSS.SOC > SSR3.HPOnSOC)
       {
         SSR3.setState = true;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
       }
     }
   }
@@ -727,14 +736,14 @@ void user_loop()
       if (VSS.SOC <= SSR3.LPOffSOC)
       {
         SSR3.setState = false;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR3_OFF_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        mqttClt.publish(t_Ctrl_StatT, String("SSR3_OFF_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
       }
       break;
     case 2: // high power
       if (VSS.SOC <= SSR3.HPOffSOC)
       {
         SSR3.setState = false;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR3_OFF_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), true);
+        mqttClt.publish(t_Ctrl_StatT, String("SSR3_OFF_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
       }
     }
   }
@@ -754,7 +763,7 @@ void user_loop()
         {
           // Low cell voltage threshold reached, disable Balancer
           SSR2.setState = false;
-          mqttClt.publish(t_Ctrl_StatT, String("SSR2_OFF_C" + String((i + 1)) + "_Vlow").c_str(), true);
+          mqttClt.publish(t_Ctrl_StatT, String("SSR2_OFF_C" + String((i + 1)) + "_Vlow").c_str(), false);
           break;
         }
       }
@@ -772,7 +781,7 @@ void user_loop()
           {
             // High cell voltage threshold reached, enable Balancer
             SSR2.setState = true;
-            mqttClt.publish(t_Ctrl_StatT, String("SSR2_ON_C" + String((i + 1)) + "_Vhi").c_str(), true);
+            mqttClt.publish(t_Ctrl_StatT, String("SSR2_ON_C" + String((i + 1)) + "_Vhi").c_str(), false);
             // end loop, one cell above threshold is enough
             break;
           }
@@ -799,9 +808,9 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
 #ifdef ENA_ONEWIRE // Optional OneWire support
-    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CONNSTAT:" + String(VSS.ConnStat) + "/" + String(BMS.ConnStat) + "/" + String(OW.ConnStat)).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CONNSTAT:" + String(VSS.ConnStat) + "/" + String(BMS.ConnStat) + "/" + String(OW.ConnStat)).c_str(), false);
 #else
-    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CONNSTAT:" + String(VSS.ConnStat) + "/" + String(BMS.ConnStat)).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CONNSTAT:" + String(VSS.ConnStat) + "/" + String(BMS.ConnStat)).c_str(), false);
 #endif
   }
   // Check if communcation has been restored to all devices
@@ -817,9 +826,9 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
 #ifdef ENA_ONEWIRE // Optional OneWire support
-    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CONNSTAT").c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CONNSTAT").c_str(), false);
 #else
-    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CONNSTAT").c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CONNSTAT").c_str(), false);
 #endif
   }
 
@@ -833,7 +842,7 @@ void user_loop()
     SSR3.Auto = false;
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
-    mqttClt.publish(t_Ctrl_StatT, String("CRIT_SAFETY_LOW_VBAT:" + String(Daly.get.packVoltage, 1) + "V").c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("CRIT_SAFETY_LOW_VBAT:" + String(Daly.get.packVoltage, 1) + "V").c_str(), false);
   }
   // Check if we recovered from undervoltage critical condition
   if (Safety.LowBatVCritical && Daly.get.packVoltage > Safety.Rec_Bat_Low_V)
@@ -843,7 +852,7 @@ void user_loop()
     SSR3.Auto = true;
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
-    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_LOW_VBAT:" + String(Daly.get.packVoltage, 1) + "V").c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_LOW_VBAT:" + String(Daly.get.packVoltage, 1) + "V").c_str(), false);
   }
 
   // Disable Loads and auto-modes if Celldiff is extremely high
@@ -858,7 +867,7 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
     SSR1.setState = false;
     SSR3.setState = false;
-    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CDIFF:" + String(Daly.get.cellDiff, 0)).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CDIFF:" + String(Daly.get.cellDiff, 0)).c_str(), false);
   }
   // Check if we recovered from Cell diff critical condition
   if (Safety.CVdiffCritical && Daly.get.cellDiff < Safety.Rec_CVdiff)
@@ -870,7 +879,7 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR2_Auto, String(Bool_Decoder[(int)SSR2.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
-    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CDIFF:" + String((Daly.get.cellDiff, 0))).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CDIFF:" + String((Daly.get.cellDiff, 0))).c_str(), false);
   }
 
   //
@@ -888,7 +897,7 @@ void user_loop()
     {
       // Cells probably overheated while charging, disable Daly Charge FET
       BMS.setCSw = 0;
-      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP: BMS Charging disabled").c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP: BMS Charging disabled").c_str(), false);
     }
     else
     {
@@ -899,11 +908,11 @@ void user_loop()
       mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
       SSR1.setState = false;
       SSR3.setState = false;
-      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP: Loads disabled").c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP: Loads disabled").c_str(), false);
 #ifdef ENA_ONEWIRE // Optional OneWire support
-      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP:" + String(OW.Temperature[i_C1_SENS], 0) + "/" + String(Daly.get.tempAverage, 0) + "/" + String(OW.Temperature[i_C8_SENS], 0)).c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP:" + String(OW.Temperature[i_C1_SENS], 0) + "/" + String(Daly.get.tempAverage, 0) + "/" + String(OW.Temperature[i_C8_SENS], 0)).c_str(), false);
 #else
-      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP:" + String(Daly.get.tempAverage, 0)).c_str(), true);
+      mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP:" + String(Daly.get.tempAverage, 0)).c_str(), false);
 #endif
     }
   }
@@ -921,9 +930,9 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
 #ifdef ENA_ONEWIRE // Optional OneWire support
-    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CTEMP:" + String(OW.Temperature[i_C1_SENS], 0) + "/" + String(Daly.get.tempAverage, 0) + "/" + String(OW.Temperature[i_C8_SENS], 0)).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CTEMP:" + String(OW.Temperature[i_C1_SENS], 0) + "/" + String(Daly.get.tempAverage, 0) + "/" + String(OW.Temperature[i_C8_SENS], 0)).c_str(), false);
 #else
-    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CTEMP:" + String(Daly.get.tempAverage, 0)).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CTEMP:" + String(Daly.get.tempAverage, 0)).c_str(), false);
 #endif
   }
 
@@ -934,14 +943,14 @@ void user_loop()
     // Charger too hot, disable charge FETs on BMS
     Safety.ChrgTempCritical = true;
     BMS.setCSw = 0;
-    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CHRGTEMP:" + String(OW.Temperature[i_CHRG_SENS], 0)).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CHRGTEMP:" + String(OW.Temperature[i_CHRG_SENS], 0)).c_str(), false);
   }
   // Check if charger temperature recovered
   if (Safety.ChrgTempCritical && OW.Temperature[i_CHRG_SENS] < Safety.Rec_ChrgTemp)
   {
     Safety.ChrgTempCritical = false;
     BMS.setCSw = 1;
-    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CHRGTEMP:" + String(OW.Temperature[i_CHRG_SENS], 0)).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CHRGTEMP:" + String(OW.Temperature[i_CHRG_SENS], 0)).c_str(), false);
   }
 #endif
 
@@ -960,7 +969,7 @@ void user_loop()
       Daly.setChargeMOS(true);
       break;
     }
-    mqttClt.publish(t_Ctrl_StatT, (String("Daly_BMS_CSw:") + String(Bool_Decoder[BMS.setCSw])).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, (String("Daly_BMS_CSw:") + String(Bool_Decoder[BMS.setCSw])).c_str(), false);
     // desired state set, reset to "do not change"
     BMS.setCSw = 2;
   }
@@ -976,7 +985,7 @@ void user_loop()
       Daly.setDischargeMOS(true);
       break;
     }
-    mqttClt.publish(t_Ctrl_StatT, (String("Daly_BMS_LSw:") + String(Bool_Decoder[BMS.setLSw])).c_str(), true);
+    mqttClt.publish(t_Ctrl_StatT, (String("Daly_BMS_LSw:") + String(Bool_Decoder[BMS.setLSw])).c_str(), false);
     // desired state set, reset to "do not change"
     BMS.setLSw = 2;
   }

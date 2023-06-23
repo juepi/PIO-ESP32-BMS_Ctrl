@@ -111,6 +111,10 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Minor status output changes (investigating readout error loop on SmartShunt)
 - Added ESP reboot when reaching configurable threshold of subsequent SmartShunt read failures (defaults to 60 -> 1 minute)
 
+## v2.4.2
+- No longer send Controller status text messages retained
+- Added global controller Alarm flag being published via MQTT; if a safety function triggers a critical condition, the flag switches to "on" (see `t_Ctrl_Alarm` in `user-config.h`)
+
   
 # NOTE on missing VeDirectFrameHandler library
 
