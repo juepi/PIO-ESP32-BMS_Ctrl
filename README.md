@@ -107,6 +107,10 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Added additional safety check to turn off loads at high cell diff voltage (stopping discharge should probably not further increase cell diff)
 - Added verification of Daly celldiff readout (reports implausible high changes between 2 readouts in rare occurences)
 
+## v2.4.1
+- Minor status output changes (investigating readout error loop on SmartShunt)
+- Added ESP reboot when reaching configurable threshold of subsequent SmartShunt read failures (defaults to 60 -> 1 minute)
+
   
 # NOTE on missing VeDirectFrameHandler library
 

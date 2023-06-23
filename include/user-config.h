@@ -172,8 +172,9 @@ extern DallasTemperature OWtemp;
 // Victron VE.Direct settings
 //
 // Global Settings
-#define VED_BAUD 19200  // Baud rate (used for all VE.Direct devices)
-#define VED_TIMEOUT 180 // If no data update occurs within this timespan (seconds), connection to VE.Direct device is considered dead
+#define VED_BAUD 19200     // Baud rate (used for all VE.Direct devices)
+#define VED_TIMEOUT 180    // If no (valid) data update occurs within this timespan (seconds), connection to VE.Direct device is considered dead
+#define VED_RX_FAIL_CNT 60 // Maximum number of subsequent invalid frames received before rebooting ESP (currently used for SmartShunt only)
 
 // SmartSolar 75/15 Charger settings (charger #1)
 #define PIN_VED_CHRG1_RX 33 // RX for SoftwareSerial
@@ -254,6 +255,7 @@ struct VED_Shunt_data
     uint32_t lastUpdate = 0;    // to verify connection is active
     uint32_t lastDecodedFr = 0; // uptime of last decoded frame
     int ConnStat = 0;           // Connection Status
+    int RxFailCnt = 0;          // Counter increased at every subsequent read-fail
 };
 
 // Struct for VE.Direct Charger data

@@ -266,7 +266,7 @@ void user_loop()
             if (abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC * 10) > VSS_MAX_SOC_DIFF)
             {
               // Unplausible increase or decrease of SOC - discard data
-              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard").c_str(), true);
+              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), true);
               VSS.ConnStat = 3;
             }
             else
@@ -279,7 +279,7 @@ void user_loop()
         else
         {
           // Unplausible SOC decoded
-          mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard").c_str(), true);
+          mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Unplausible:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), true);
           VSS.ConnStat = 3;
         }
       }
@@ -306,10 +306,23 @@ void user_loop()
         VSS.iAR = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_AR]);
       }
 
-      // If connection state is still ok (no data verification error), increase lastUpdate
-      if (VSS.ConnStat == 1)
+      switch (VSS.ConnStat)
       {
+      case 1:
+        // readout was successful
         VSS.lastUpdate = UptimeSeconds;
+        VSS.RxFailCnt = 0;
+        break;
+      case 3:
+        // readout failed
+        VSS.RxFailCnt++;
+        if (VSS.RxFailCnt > VED_RX_FAIL_CNT)
+        {
+          mqttClt.publish(t_Ctrl_StatT, String("VSS reached VED_RX_FAIL_CNT, rebooting!").c_str(), true);
+          delay(200);
+          ESP.restart();
+        }
+        break;
       }
     }
     // grant time for background tasks
