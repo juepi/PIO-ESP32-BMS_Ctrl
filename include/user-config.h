@@ -206,7 +206,7 @@ extern DallasTemperature OWtemp;
 #define PIN_VED_SHNT_TX 34 // TX for SoftwareSerial (unused)
 
 // Readout error detection
-#define VSS_MAX_SOC_DIFF 5 // max. allowed diff of SOC value between 2 readouts (larger diff -> new value ignored)
+#define VSS_MAX_SOC_DIFF 50 // max. allowed diff of SOC value between 2 readouts (larger diff -> new value ignored) ATTN: these are 1/10th of a percent!
 
 // Array element indexes of VED_Shnt.veValue which will be sent to the MQTT broker (ATTN: valid for SmartShunt 500 with firmware 4.12)
 // See Victron Documentation: https://www.victronenergy.com/support-and-downloads/technical-information# --> VE.Direct protocol

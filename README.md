@@ -113,7 +113,8 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 
 ## v2.4.2
 - No longer send Controller status text messages retained
-- Added global controller Alarm flag being published via MQTT; if a safety function triggers a critical condition, the flag switches to "on" (see `t_Ctrl_Alarm` in `user-config.h`)
+- Added global controller Alarm flag being published via MQTT; if a safety function triggers a critical condition, the flag switches to "on" (see topic `t_Ctrl_Alarm` in `user-config.h`)
+- "Bugfix" in SmartShunt SOC verification ("error loop" from v2.4.1 - basically `VSS_MAX_SOC_DIFF` was set too low to 0.5% instead of 5%)
 
   
 # NOTE on missing VeDirectFrameHandler library

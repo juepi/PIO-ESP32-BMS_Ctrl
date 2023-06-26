@@ -266,7 +266,8 @@ void user_loop()
             if (abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC * 10) > VSS_MAX_SOC_DIFF)
             {
               // Unplausible increase or decrease of SOC - discard data
-              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
+              //mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
+              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff").c_str(), false);
               VSS.ConnStat = 3;
             }
             else
@@ -279,7 +280,8 @@ void user_loop()
         else
         {
           // Unplausible SOC decoded
-          mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Unplausible:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
+          //mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Unplausible:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
+          mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Unplausible").c_str(), false);
           VSS.ConnStat = 3;
         }
       }
@@ -707,7 +709,7 @@ void user_loop()
   // If SOC has reached the configured charge limit, enable load
   if (SSR3.Auto && !SSR3.actState)
   {
-    // Auto mode enabled, SSR1 disabled, check PV power state
+    // Auto mode enabled, SSR3 disabled, check PV power state
     switch (PV.PwrLvl)
     {
     case 0 ... 1: // Low and medium power
