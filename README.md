@@ -116,6 +116,11 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Added global controller Alarm flag being published via MQTT; if a safety function triggers a critical condition, the flag switches to "on" (see topic `t_Ctrl_Alarm` in `user-config.h`)
 - "Bugfix" in SmartShunt SOC verification ("error loop" from v2.4.1 - basically `VSS_MAX_SOC_DIFF` was set too low to 0.5% instead of 5%)
 
+## v2.4.3
+- Added status text message when not discarding unrealistic high Daly BMS voltage diff
+- Increased max number of unrealistic subsequent voltage diff values from Daly BMS which will be discarded (from 2 to 4)
+- Switched balancer power-off condition from single cell to all cells below `SSR2.CVOff` (previous conditions could lead to Auto-mode rapidly toggling balancer if a single cell is above enable and another one is below disable voltage)
+
   
 # NOTE on missing VeDirectFrameHandler library
 

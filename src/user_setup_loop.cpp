@@ -366,6 +366,7 @@ void user_loop()
             // although unrealistic, we have to assume the readout is correct after several retries..
             CDiff_Unplausible_Cnt = 0;
             Prev_CDiff = Daly.get.cellDiff;
+            mqttClt.publish(t_Ctrl_StatT, String("Daly_Cdiff_NoDiscard").c_str(), false);
           }
           else
           {
@@ -758,16 +759,20 @@ void user_loop()
     if (SSR2.actState)
     {
       // Balancer is active
-      // ..check if any cell is below low cell voltage threshold
+      // ..check if ALL cells are below low cell voltage threshold
+      int CellCnt = 0;
       for (int i = 0; i < Daly.get.numberOfCells; i++)
       {
         if (Daly.get.cellVmV[i] < SSR2.CVOff)
         {
-          // Low cell voltage threshold reached, disable Balancer
-          SSR2.setState = false;
-          mqttClt.publish(t_Ctrl_StatT, String("SSR2_OFF_C" + String((i + 1)) + "_Vlow").c_str(), false);
-          break;
+          CellCnt++;
         }
+      }
+      if (CellCnt == Daly.get.numberOfCells)
+      {
+        // Low cell voltage threshold reached for all cells, disable Balancer
+        SSR2.setState = false;
+        mqttClt.publish(t_Ctrl_StatT, String("SSR2_OFF_CVlow").c_str(), false);
       }
     }
     else

@@ -105,7 +105,7 @@ extern DallasTemperature OWtemp;
 
 // Max difference between 2 readouts of cell voltage diff
 #define MAX_CDIFF_DIFF 50.0f // readout with a higher difference to the previous readout will be discarded
-#define MAX_IGNORED_CDIFF 2  // if 2 subsequent readouts are "unrealistic", we have to assume that they aren't..
+#define MAX_IGNORED_CDIFF 4  // if 2 subsequent readouts are "unrealistic", we have to assume that they aren't..
 
 // MQTT Publish only
 #define t_DSOC TOPTREE "Daly_SOC"      // BMS Battery State of Charge(useless, see current)
@@ -282,7 +282,7 @@ struct Daly_BMS_data
 {
     int ConnStat = 0; // Connection status
     // ATTENTION: BMS FET states should only be set by the BMS-Controller in case of emergency!
-    int setLSw = 2;          // desired state of Daly Load (Discharge) FETs (0=off, 1=on, 2=dnc)
+    int setLSw = 2;          // desired state of Daly Load (Discharge) FETs (0=off, 1=on, 2=dnc -> do not change / keep current state even if changed by BMS)
     int setCSw = 2;          // desired state of Daly Charge FETs (0=off, 1=on, 2=dnc)
     uint32_t lastUpdate = 0; // to verify connection is active
     uint32_t lastValid = 0;  // uptime of last valid frame
