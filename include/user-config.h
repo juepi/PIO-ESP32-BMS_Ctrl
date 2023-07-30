@@ -74,6 +74,7 @@ extern DallasTemperature OWtemp;
 
 // MQTT Topics (Subscriptions)
 #define t_Ctrl_Cfg_Safety_CritCdiff TOPTREE "Cfg/Safety_CritCdiff"
+#define t_Ctrl_Cfg_Offgrid_Mode TOPTREE "Cfg/Safety_OffgridMode"
 
 //
 // OneWire Bus
@@ -339,6 +340,7 @@ struct Safety_Config
     bool ChrgTempCritical = false;
     bool CVdiffCritical = false;
     bool LowBatVCritical = false;
+    bool OffgridMode = false;                // When enabled (MQTT Topic "on"), OneWire sensors will not be read out. Instead, they will be set to "11"; OneWire communication tends to break at high battery loads (like offgrid inverter)
     float Crit_CVdiff = CRIT_CELLDIFF;       // Maximum celldiff at which to disable the loads (configured via MQTT topic)
     float Rec_CVdiff = RECOVER_CELLDIFF;     // Celldiff at which to resume loads (auto-mode for all SSR will be enabled)
     float Crit_CellTemp = CRIT_CELL_T;       // Critical cell temperature at which to stop charging (if PPV is high) or disable loads

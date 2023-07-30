@@ -20,7 +20,7 @@
 // .[Bool|Int|Float]Ptr: Pointer to a global var (according to "Type") where the decoded message info will be stored 
 //
 
-const int SubscribedTopicCnt = 22; // Overall amount of topics to subscribe to
+const int SubscribedTopicCnt = 23; // Overall amount of topics to subscribe to
 
 MqttSubCfg MqttSubscriptions[SubscribedTopicCnt]={
     // OTA Topics
@@ -50,5 +50,6 @@ MqttSubCfg MqttSubscriptions[SubscribedTopicCnt]={
     {.Topic = t_Ctrl_Cfg_PV_LowPPV, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &PV.LowPPV },
     {.Topic = t_Ctrl_Cfg_PV_HighPPV, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &PV.HighPPV },
     // Safety
-    {.Topic = t_Ctrl_Cfg_Safety_CritCdiff, .Type = 2, .Subscribed = false, .MsgRcvd = false, .FloatPtr = &Safety.Crit_CVdiff }
+    {.Topic = t_Ctrl_Cfg_Safety_CritCdiff, .Type = 2, .Subscribed = false, .MsgRcvd = false, .FloatPtr = &Safety.Crit_CVdiff },
+    {.Topic = t_Ctrl_Cfg_Offgrid_Mode, .Type = 0, .Subscribed = false, .MsgRcvd = false, .BoolPtr = &Safety.OffgridMode }
 };

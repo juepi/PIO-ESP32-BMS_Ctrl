@@ -39,6 +39,7 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - VeDirectFrameHandler data from the SmartShunt is "sorted" randomly in the veValue/veName arrays, which breaks the "hardcoded" index numbers I used to get the values from the data arrays. I've fixed this by adding a function to the library that allows you to fetch the arrays index number from a given veName tag. I've not encountered this behavior with the SmartSolar charger yet.
 - OneWire doesn't seem to work on high-numbered GPIO pins (tested with > 36); using IO4 works fine!
 - It seems (in version **v2.3.0**) that a high frequency toggling of SSR3 relay occured at firmware boot - i have not been able to identify the root cause, it seemed to happen only when SSR3 has been enabled automatically at firmware boot. I think this might occur when changing the SSRs "setState" Topic on the broker (and in the sketch) - after setting, the value is re-read by the firmware as soon as the broker sends out the received value. As the dedicated "on firmware boot" handling of the SSR states was unneccessary anyways, i have completely removed it (**v2.3.1**) and added some additional delay when sending the SSR setStates to the broker in addition to publishing the initial "all off" state to the MQTT broker at firmware boot. The error does not seem to occur any more.
+- An **"offgrid mode"** has been added (**v2.4.3**) as i've experienced that certain battery loads (like my offgrid inverter) causes the OneWire communication to fail. I assume that the inverter causes high noise on the DC wires, but as only OneWire communication is affected, i decided to add this MQTT on/off switchable function to allow skipping OneWire readouts (all sensors will be set to 11°C in offgrid mode, see `t_Ctrl_Cfg_Offgrid_Mode` in `user-config.h`). Plugging in the offgrid inverter is only done in case of a long lasting power outage, which has not happened yet (and hopefully never will), so i can live with that limitation. **A note on failing OneWire communication:** in my case the only way to recover OW-communication was to power down the ESP (remove power from the OW sensors), it seems that the controller inside the sensors hung and rebooting the ESP did not help.
 
 
 # Version History
@@ -120,6 +121,7 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Added status text message when not discarding unrealistic high Daly BMS voltage diff
 - Increased max number of unrealistic subsequent voltage diff values from Daly BMS which will be discarded (from 2 to 4)
 - Switched balancer power-off condition from single cell to all cells below `SSR2.CVOff` (previous conditions could lead to Auto-mode rapidly toggling balancer if a single cell is above enable and another one is below disable voltage)
+- Added "offgrid mode", can be enabled when "noisy" battery loads break OneWire communication (in example, when connecting an offgrid inverter)
 
   
 # NOTE on missing VeDirectFrameHandler library

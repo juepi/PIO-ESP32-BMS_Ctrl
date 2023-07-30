@@ -266,7 +266,7 @@ void user_loop()
             if (abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC * 10) > VSS_MAX_SOC_DIFF)
             {
               // Unplausible increase or decrease of SOC - discard data
-              //mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
+              // mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
               mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff").c_str(), false);
               VSS.ConnStat = 3;
             }
@@ -280,7 +280,7 @@ void user_loop()
         else
         {
           // Unplausible SOC decoded
-          //mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Unplausible:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
+          // mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Unplausible:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
           mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Unplausible").c_str(), false);
           VSS.ConnStat = 3;
         }
@@ -420,11 +420,22 @@ void user_loop()
     // Get OW temperatures
     if (OW.ConnStat <= 3)
     {
-      OWtemp.requestTemperatures(); // blocking call
+      if (!Safety.OffgridMode)
+      {
+        OWtemp.requestTemperatures(); // blocking call
+      }
       OW.ReadOk = true;
       for (int i = 0; i < NUM_OWTEMP; i++)
       {
-        float ReadT = OWtemp.getTempCByIndex(i);
+        float ReadT = 0;
+        if (Safety.OffgridMode)
+        {
+          ReadT = 11.0f; // Offgrid Mode enabled - do not read out OW sensors, set to 11°C manually
+        }
+        else
+        {
+          ReadT = OWtemp.getTempCByIndex(i);
+        }
         if (ReadT == DEVICE_DISCONNECTED_C || ReadT == DEVICE_FAULT_OPEN_C)
         {
           // sensor read fault - end this read cycle
@@ -530,7 +541,7 @@ void user_loop()
     {
       mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[0]).c_str(), true);
     }
-    
+
     // Daly BMS
     if (BMS.ConnStat <= 1)
     {
