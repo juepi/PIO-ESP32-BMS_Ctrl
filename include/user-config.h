@@ -106,7 +106,7 @@ extern DallasTemperature OWtemp;
 
 // Max difference between 2 readouts of cell voltage diff
 #define MAX_CDIFF_DIFF 50.0f // readout with a higher difference to the previous readout will be discarded
-#define MAX_IGNORED_CDIFF 4  // if 2 subsequent readouts are "unrealistic", we have to assume that they aren't..
+#define MAX_IGNORED_CDIFF 4  // if 4 subsequent readouts are "unrealistic", we have to assume that they aren't..
 
 // MQTT Publish only
 #define t_DSOC TOPTREE "Daly_SOC"      // BMS Battery State of Charge(useless, see current)

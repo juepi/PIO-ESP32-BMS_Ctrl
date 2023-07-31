@@ -126,7 +126,7 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
   
 # NOTE on missing VeDirectFrameHandler library
 
-I somehow managed to not to include the VeDirectFrameHandler library into previous commits as it was intended. **This affects all versions since adding VE.Direct support in v1.2.0!**  
+I somehow managed to not to include the VeDirectFrameHandler library into previous commits as it was intended. **This affects all versions prior v2.1.0!**  
 If you want to build an older release, you can easily fix this by adding my [fork of VeDirectFrameHandler](https://github.com/juepi/VeDirectFrameHandler) into the library section of `platformio.ini`:
 
 ```
