@@ -265,10 +265,19 @@ void user_loop()
             // Additional plausibility check for new SOC
             if (abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC * 10) > VSS_MAX_SOC_DIFF)
             {
-              // Unplausible increase or decrease of SOC - discard data
-              // mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
-              mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff").c_str(), false);
-              VSS.ConnStat = 3;
+              if ((atoi(VED_Chrg1.veValue[VCHRG1.iCS]) == 4) && (atoi(VED_Shnt.veValue[VSS.iSOC]) == 1000))
+              {
+                // SOC jumping to 100% is valid when battery is full (-> Charger in Absorption mode)
+                mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Resync_100").c_str(), false);
+                VSS.SOC = atof(VED_Shnt.veValue[VSS.iSOC]) / 10;
+              }
+              else
+              {
+                // Unplausible increase or decrease of SOC - discard data
+                // mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
+                mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff").c_str(), false);
+                VSS.ConnStat = 3;
+              }
             }
             else
             {

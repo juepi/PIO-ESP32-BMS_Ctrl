@@ -123,6 +123,8 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Switched balancer power-off condition from single cell to all cells below `SSR2.CVOff` (previous conditions could lead to Auto-mode rapidly toggling balancer if a single cell is above enable and another one is below disable voltage)
 - Added "offgrid mode", can be enabled when "noisy" battery loads break OneWire communication (in example, when connecting an offgrid inverter)
 
+## v2.4.4
+- Allow larger SOC changes when charger switches to absorption mode (battery full -> SmartShunt corrects SOC to 100%)
   
 # NOTE on missing VeDirectFrameHandler library
 
