@@ -135,22 +135,17 @@ extern DallasTemperature OWtemp;
 // Remember: All of the subscribed topics need pre-defined (retained) values!
 #define t_Ctrl_Cfg_SSR1_setState TOPTREE "Cfg/SSR1_setState" // User-desired state of SSR1 GPIO (on/off)
 #define t_Ctrl_Cfg_SSR1_Auto TOPTREE "Cfg/SSR1_Auto"
-#define t_Ctrl_Cfg_SSR1_LPOnSOC TOPTREE "Cfg/SSR1_LPOnSOC"
-#define t_Ctrl_Cfg_SSR1_LPOffSOC TOPTREE "Cfg/SSR1_LPOffSOC"
 #define t_Ctrl_Cfg_SSR1_HPOnSOC TOPTREE "Cfg/SSR1_HPOnSOC"
-#define t_Ctrl_Cfg_SSR1_HPOffSOC TOPTREE "Cfg/SSR1_HPOffSOC"
-#define t_Ctrl_Cfg_SSR1_BootOnSOC TOPTREE "Cfg/SSR1_BootOnSOC"
+#define t_Ctrl_Cfg_SSR1_LPOnSOC TOPTREE "Cfg/SSR1_LPOnSOC"
+#define t_Ctrl_Cfg_SSR1_OffSOC TOPTREE "Cfg/SSR1_OffSOC"
 
 #define t_Ctrl_Cfg_SSR3_setState TOPTREE "Cfg/SSR3_setState" // Desired state of SSR3 GPIO (on/off)
 #define t_Ctrl_Cfg_SSR3_Auto TOPTREE "Cfg/SSR3_Auto"
-#define t_Ctrl_Cfg_SSR3_LPOnSOC TOPTREE "Cfg/SSR3_LPOnSOC"
-#define t_Ctrl_Cfg_SSR3_LPOffSOC TOPTREE "Cfg/SSR3_LPOffSOC"
 #define t_Ctrl_Cfg_SSR3_HPOnSOC TOPTREE "Cfg/SSR3_HPOnSOC"
-#define t_Ctrl_Cfg_SSR3_HPOffSOC TOPTREE "Cfg/SSR3_HPOffSOC"
-#define t_Ctrl_Cfg_SSR3_BootOnSOC TOPTREE "Cfg/SSR3_BootOnSOC"
+#define t_Ctrl_Cfg_SSR3_LPOnSOC TOPTREE "Cfg/SSR3_LPOnSOC"
+#define t_Ctrl_Cfg_SSR3_OffSOC TOPTREE "Cfg/SSR3_OffSOC"
 
-#define t_Ctrl_Cfg_PV_LowPPV TOPTREE "Cfg/LowPPV"
-#define t_Ctrl_Cfg_PV_HighPPV TOPTREE "Cfg/HighPPV"
+#define t_Ctrl_Cfg_PV_HighPPV TOPTREE "Cfg/HighPPV" // High avg PV power threshold; everything below is considered as Low PPV
 
 //
 // Active Balancer Settings (SSR2)
@@ -176,7 +171,6 @@ extern DallasTemperature OWtemp;
 // Global Settings
 #define VED_BAUD 19200     // Baud rate (used for all VE.Direct devices)
 #define VED_TIMEOUT 180    // If no (valid) data update occurs within this timespan (seconds), connection to VE.Direct device is considered dead
-#define VED_RX_FAIL_CNT 60 // Maximum number of subsequent invalid frames received before rebooting ESP (currently used for SmartShunt only)
 
 // SmartSolar 75/15 Charger settings (charger #1)
 #define PIN_VED_CHRG1_RX 33 // RX for SoftwareSerial
@@ -219,7 +213,7 @@ extern DallasTemperature OWtemp;
 #define i_SS_LBL_P 3     // instantaneous power [W]
 #define i_SS_LBL_CE 4    // consumed Ah [mAh]
 #define i_SS_LBL_SOC 5   // battery SOC [‰]
-#define i_SS_LBL_TTG 6   // time to empty [min] (-1 if not dicharging)
+#define i_SS_LBL_TTG 6   // time to empty [min] (-1 if not discharging)
 #define i_SS_LBL_ALARM 7 // Alarm active flag (ON/OFF)
 #define i_SS_LBL_AR 8    // Alarm Reason
 
@@ -257,7 +251,6 @@ struct VED_Shunt_data
     uint32_t lastUpdate = 0;    // to verify connection is active
     uint32_t lastDecodedFr = 0; // uptime of last decoded frame
     int ConnStat = 0;           // Connection Status
-    int RxFailCnt = 0;          // Counter increased at every subsequent read-fail
 };
 
 // Struct for VE.Direct Charger data
@@ -283,7 +276,7 @@ struct Daly_BMS_data
 {
     int ConnStat = 0; // Connection status
     // ATTENTION: BMS FET states should only be set by the BMS-Controller in case of emergency!
-    int setLSw = 2;          // desired state of Daly Load (Discharge) FETs (0=off, 1=on, 2=dnc -> do not change / keep current state even if changed by BMS)
+    int setLSw = 2;          // desired state of Daly Load (Discharge) FETs (0=off, 1=on, 2=dnc -> do not change / keep current state)
     int setCSw = 2;          // desired state of Daly Charge FETs (0=off, 1=on, 2=dnc)
     uint32_t lastUpdate = 0; // to verify connection is active
     uint32_t lastValid = 0;  // uptime of last valid frame
@@ -308,9 +301,8 @@ struct Load_SSR_Config
     bool setState = false;            // desired (set) state of the SSR (either by this sketch or received by MQTT message)
     bool Auto = false;                // Automatic mode (enable/disable by MQTT)
     int LPOnSOC = DEF_LP_ON_LOAD_SOC; // Low PV power ON SOC (configured via MQTT topic)
-    int LPOffSOC = DEF_OFF_LOAD_SOC;  // Low PV power OFF SOC (configured via MQTT topic)
+    int OffSOC = DEF_OFF_LOAD_SOC;    // OFF SOC (configured via MQTT topic)
     int HPOnSOC = DEF_HP_ON_LOAD_SOC; // High PV power ON SOC (configured via MQTT topic)
-    int HPOffSOC = DEF_OFF_LOAD_SOC;  // High PV power OFF SOC (configured via MQTT topic)
 };
 
 // Config struct for balancer (SSR2)
@@ -327,9 +319,8 @@ struct Balancer_Config
 // Config struct for PV specific settings
 struct PV_Config
 {
-    int PwrLvl = 0;    // current power level (0=low, 1=medium, 2=high)
-    int LowPPV = 100;  // < Avg_PPV considered as low (configured via MQTT topic)
-    int HighPPV = 300; // > Avg_PPV considered as high (configured via MQTT topic)
+    int PwrLvl = 0;    // current PV power level (0=low, 1=high)
+    int HighPPV = 170; // > Avg_PPV considered as high (configured via MQTT topic)
 };
 
 // Config struct for Safety features

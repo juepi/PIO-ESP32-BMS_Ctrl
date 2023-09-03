@@ -317,23 +317,10 @@ void user_loop()
         VSS.iAR = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_AR]);
       }
 
-      switch (VSS.ConnStat)
+      if (VSS.ConnStat == 1)
       {
-      case 1:
         // readout was successful
         VSS.lastUpdate = UptimeSeconds;
-        VSS.RxFailCnt = 0;
-        break;
-      case 3:
-        // readout failed
-        VSS.RxFailCnt++;
-        if (VSS.RxFailCnt > VED_RX_FAIL_CNT)
-        {
-          mqttClt.publish(t_Ctrl_StatT, String("VSS reached VED_RX_FAIL_CNT, rebooting!").c_str(), false);
-          delay(200);
-          ESP.restart();
-        }
-        break;
       }
     }
     // grant time for background tasks
@@ -510,17 +497,13 @@ void user_loop()
     }
     VCHRG1.Avg_PPV = Pavg_Sum / 10;
     // Update PPV power level
-    if (VCHRG1.Avg_PPV < PV.LowPPV)
+    if (VCHRG1.Avg_PPV >= PV.HighPPV)
     {
-      PV.PwrLvl = 0;
-    }
-    else if (VCHRG1.Avg_PPV >= PV.HighPPV)
-    {
-      PV.PwrLvl = 2;
+      PV.PwrLvl = 1; // High avg PV power
     }
     else
     {
-      PV.PwrLvl = 1; // Medium PV power - currently unused
+      PV.PwrLvl = 0; // Low avg PV power
     }
   }
 
@@ -686,14 +669,14 @@ void user_loop()
     // Auto mode enabled, SSR1 disabled, check PV power state
     switch (PV.PwrLvl)
     {
-    case 0 ... 1: // Low and medium power
+    case 0: // Low power
       if (VSS.SOC > SSR1.LPOnSOC)
       {
         SSR1.setState = true;
         mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
       }
       break;
-    case 2: // high power
+    case 1: // high power
       if (VSS.SOC > SSR1.HPOnSOC)
       {
         SSR1.setState = true;
@@ -702,26 +685,12 @@ void user_loop()
     }
   }
 
-  // Disable SSR1 when SOC according to PV power is reached
+  // Disable SSR1 when Off-SOC is reached
   // This must also trigger if the load was enabled manually, so use effective SSR1.actState
-  if (SSR1.actState)
+  if (SSR1.actState && VSS.SOC <= SSR1.OffSOC)
   {
-    switch (PV.PwrLvl)
-    {
-    case 0 ... 1: // Low and medium power
-      if (VSS.SOC <= SSR1.LPOffSOC)
-      {
-        SSR1.setState = false;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
-      }
-      break;
-    case 2: // high power
-      if (VSS.SOC <= SSR1.HPOffSOC)
-      {
-        SSR1.setState = false;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
-      }
-    }
+    SSR1.setState = false;
+    mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_SoC:" + String(VSS.SOC, 0)).c_str(), false);
   }
 
   //
@@ -733,14 +702,14 @@ void user_loop()
     // Auto mode enabled, SSR3 disabled, check PV power state
     switch (PV.PwrLvl)
     {
-    case 0 ... 1: // Low and medium power
+    case 0: // Low power
       if (VSS.SOC > SSR3.LPOnSOC)
       {
         SSR3.setState = true;
         mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
       }
       break;
-    case 2: // high power
+    case 1: // high power
       if (VSS.SOC > SSR3.HPOnSOC)
       {
         SSR3.setState = true;
@@ -749,26 +718,12 @@ void user_loop()
     }
   }
 
-  // Disable SSR3 when SOC according to PV power is reached
+  // Disable SSR3 when Off-SOC is reached
   // This must also trigger if the load was enabled manually, so use effective SSR3.actState
-  if (SSR3.actState)
+  if (SSR3.actState && VSS.SOC <= SSR3.OffSOC)
   {
-    switch (PV.PwrLvl)
-    {
-    case 0 ... 1: // Low and medium power
-      if (VSS.SOC <= SSR3.LPOffSOC)
-      {
-        SSR3.setState = false;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR3_OFF_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
-      }
-      break;
-    case 2: // high power
-      if (VSS.SOC <= SSR3.HPOffSOC)
-      {
-        SSR3.setState = false;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR3_OFF_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
-      }
-    }
+    SSR3.setState = false;
+    mqttClt.publish(t_Ctrl_StatT, String("SSR3_OFF_SoC:" + String(VSS.SOC, 0)).c_str(), false);
   }
 
   //

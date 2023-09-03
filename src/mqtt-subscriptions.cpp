@@ -20,7 +20,7 @@
 // .[Bool|Int|Float]Ptr: Pointer to a global var (according to "Type") where the decoded message info will be stored 
 //
 
-const int SubscribedTopicCnt = 23; // Overall amount of topics to subscribe to
+const int SubscribedTopicCnt = 20; // Overall amount of topics to subscribe to
 
 MqttSubCfg MqttSubscriptions[SubscribedTopicCnt]={
     // OTA Topics
@@ -30,16 +30,14 @@ MqttSubCfg MqttSubscriptions[SubscribedTopicCnt]={
     {.Topic = t_Ctrl_Cfg_SSR1_setState, .Type = 0, .Subscribed = false, .MsgRcvd = false, .BoolPtr = &SSR1.setState },
     {.Topic = t_Ctrl_Cfg_SSR1_Auto, .Type = 0, .Subscribed = false, .MsgRcvd = false, .BoolPtr = &SSR1.Auto },
     {.Topic = t_Ctrl_Cfg_SSR1_LPOnSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR1.LPOnSOC },
-    {.Topic = t_Ctrl_Cfg_SSR1_LPOffSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR1.LPOffSOC },
+    {.Topic = t_Ctrl_Cfg_SSR1_OffSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR1.OffSOC },
     {.Topic = t_Ctrl_Cfg_SSR1_HPOnSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR1.HPOnSOC },
-    {.Topic = t_Ctrl_Cfg_SSR1_HPOffSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR1.HPOffSOC },
     // SSR3
     {.Topic = t_Ctrl_Cfg_SSR3_setState, .Type = 0, .Subscribed = false, .MsgRcvd = false, .BoolPtr = &SSR3.setState },
     {.Topic = t_Ctrl_Cfg_SSR3_Auto, .Type = 0, .Subscribed = false, .MsgRcvd = false, .BoolPtr = &SSR3.Auto },
     {.Topic = t_Ctrl_Cfg_SSR3_LPOnSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR3.LPOnSOC },
-    {.Topic = t_Ctrl_Cfg_SSR3_LPOffSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR3.LPOffSOC },
+    {.Topic = t_Ctrl_Cfg_SSR3_OffSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR3.OffSOC },
     {.Topic = t_Ctrl_Cfg_SSR3_HPOnSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR3.HPOnSOC },
-    {.Topic = t_Ctrl_Cfg_SSR3_HPOffSOC, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR3.HPOffSOC },
     // SSR2
     {.Topic = t_Ctrl_Cfg_SSR2_setState, .Type = 0, .Subscribed = false, .MsgRcvd = false, .BoolPtr = &SSR2.setState },
     {.Topic = t_Ctrl_Cfg_SSR2_Auto, .Type = 0, .Subscribed = false, .MsgRcvd = false, .BoolPtr = &SSR2.Auto },
@@ -47,7 +45,6 @@ MqttSubCfg MqttSubscriptions[SubscribedTopicCnt]={
     {.Topic = t_Ctrl_Cfg_SSR2_CVOff, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR2.CVOff },
     {.Topic = t_Ctrl_Cfg_SSR2_CdiffOn, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &SSR2.CdiffOn },
     // PV
-    {.Topic = t_Ctrl_Cfg_PV_LowPPV, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &PV.LowPPV },
     {.Topic = t_Ctrl_Cfg_PV_HighPPV, .Type = 1, .Subscribed = false, .MsgRcvd = false, .IntPtr = &PV.HighPPV },
     // Safety
     {.Topic = t_Ctrl_Cfg_Safety_CritCdiff, .Type = 2, .Subscribed = false, .MsgRcvd = false, .FloatPtr = &Safety.Crit_CVdiff },

@@ -125,6 +125,13 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 
 ## v2.4.4
 - Allow larger SOC changes when charger switches to absorption mode (battery full -> SmartShunt corrects SOC to 100%)
+
+## v2.5.0
+- Functionality cleanups
+    - Removed Low-PPV threshold (everything below High-PPV threshold is considered as low now)
+    - Removed Low/High-PPV Off-SOC for SSRs (simply useless - switched to a single Off-SOC)
+- Removed ESP reboot for SmartShunt read failures (useless)
+
   
 # NOTE on missing VeDirectFrameHandler library
 
