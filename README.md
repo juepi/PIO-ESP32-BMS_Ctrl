@@ -11,7 +11,7 @@ To configure the firmware for your needs, see files `user-config.h` and `mqtt-ot
 - 1x [Victron SmartSolar](https://www.victronenergy.com/solar-charge-controllers/smartsolar-100-30-100-50) charger (or any other charger supporting the text version of the VE.Direct protocol)
 - 1x [Victron SmartShunt](https://www.victronenergy.com/battery-monitors/smart-battery-shunt) with the amps required for your setup
 - 3x [ADUM1201 UART Isolators](https://aliexpress.com/item/1005003649567525.html) or any other digital isolators you prefer
-- 1x [AQW212EH Optocoupler](https://industry.panasonic.eu/de/components/relays/relays/photomos-relays/photomos-ge-2-form/aqw212eh-aqw212eh)
+- 1x [AQW212EH Optocoupler](https://na.industrial.panasonic.com/products/relays-contactors/semiconductor-relays/lineup/photomos-relays/series/12512/model/12513)
 - 1x [Active Balancer](https://aliexpress.com/item/4001176521939.html)
 - a local WiFi network with a MQTT broker
 - Sunlight. :wink:
