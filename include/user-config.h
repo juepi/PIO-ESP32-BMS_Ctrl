@@ -169,8 +169,8 @@ extern DallasTemperature OWtemp;
 // Victron VE.Direct settings
 //
 // Global Settings
-#define VED_BAUD 19200     // Baud rate (used for all VE.Direct devices)
-#define VED_TIMEOUT 180    // If no (valid) data update occurs within this timespan (seconds), connection to VE.Direct device is considered dead
+#define VED_BAUD 19200  // Baud rate (used for all VE.Direct devices)
+#define VED_TIMEOUT 180 // If no (valid) data update occurs within this timespan (seconds), connection to VE.Direct device is considered dead
 
 // SmartSolar 75/15 Charger settings (charger #1)
 #define PIN_VED_CHRG1_RX 33 // RX for SoftwareSerial
@@ -300,6 +300,7 @@ struct Load_SSR_Config
     bool actState = false;            // Currently active state of the SSR (GPIO)
     bool setState = false;            // desired (set) state of the SSR (either by this sketch or received by MQTT message)
     bool Auto = false;                // Automatic mode (enable/disable by MQTT)
+    bool preCritAuto = false;         // Automatic mode setting before entering critical state (to restore after recovering)
     int LPOnSOC = DEF_LP_ON_LOAD_SOC; // Low PV power ON SOC (configured via MQTT topic)
     int OffSOC = DEF_OFF_LOAD_SOC;    // OFF SOC (configured via MQTT topic)
     int HPOnSOC = DEF_HP_ON_LOAD_SOC; // High PV power ON SOC (configured via MQTT topic)
@@ -311,6 +312,7 @@ struct Balancer_Config
     bool actState = false;             // Currently active state of the balancer SSR (GPIO)
     bool setState = false;             // desired (set) state of the balancer (either by this sketch or received by MQTT message)
     bool Auto = false;                 // Automatic mode (enable/disable by MQTT)
+    bool preCritAuto = false;          // Automatic mode setting before entering critical state (to restore after recovering)
     int CVOn = DEF_BAL_ON_CELLV;       // Minimum single cell voltage at which to enable balancer (configured via MQTT topic)
     int CVOff = DEF_BAL_OFF_CELLV;     // Min. single cell voltage at which to disable balancer (configured via MQTT topic)
     int CdiffOn = DEF_BAL_ON_CELLDIFF; // Minimum celldiff (diff between highest and lowest cell voltage) at which to enable balancer (configured via MQTT topic)

@@ -132,6 +132,9 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
     - Removed Low/High-PPV Off-SOC for SSRs (simply useless - switched to a single Off-SOC)
 - Removed ESP reboot for SmartShunt read failures (useless)
 
+## v2.5.1
+- Use Victron SmartShunt voltage (instead of Daly data) as battery pack voltage source for safety checks
+- recover previous SSR Auto-mode settings instead of enabling all auto modes when recovering from critical states
   
 # NOTE on missing VeDirectFrameHandler library
 

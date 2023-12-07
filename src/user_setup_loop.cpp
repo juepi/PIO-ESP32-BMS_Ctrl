@@ -205,7 +205,7 @@ void user_loop()
       }
       if (VSS.iV != 255)
       {
-        if ((atoi(VED_Shnt.veValue[VSS.iV]) > 10000) && (atoi(VED_Shnt.veValue[VSS.iV]) < 30000))
+        if ((atoi(VED_Shnt.veValue[VSS.iV]) > 20000) && (atoi(VED_Shnt.veValue[VSS.iV]) < 30000))
         {
           VSS.V = atof(VED_Shnt.veValue[VSS.iV]) / 1000;
         }
@@ -815,32 +815,39 @@ void user_loop()
   }
 
   // Disable loads and auto-modes when battery pack voltage is below critical threshold
-  if (!Safety.LowBatVCritical && Daly.get.packVoltage <= Safety.Crit_Bat_Low_V)
+  if (!Safety.LowBatVCritical && VSS.V <= Safety.Crit_Bat_Low_V)
   {
     Safety.LowBatVCritical = true;
     SSR1.setState = false;
     SSR3.setState = false;
+    // Backup current Auto mode settings
+    SSR1.preCritAuto = SSR1.Auto;
+    SSR3.preCritAuto = SSR3.Auto;
     SSR1.Auto = false;
     SSR3.Auto = false;
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
-    mqttClt.publish(t_Ctrl_StatT, String("CRIT_SAFETY_LOW_VBAT:" + String(Daly.get.packVoltage, 1) + "V").c_str(), false);
+    mqttClt.publish(t_Ctrl_StatT, String("CRIT_SAFETY_LOW_VBAT:" + String(VSS.V, 1) + "V").c_str(), false);
   }
   // Check if we recovered from undervoltage critical condition
-  if (Safety.LowBatVCritical && Daly.get.packVoltage > Safety.Rec_Bat_Low_V)
+  if (Safety.LowBatVCritical && VSS.V > Safety.Rec_Bat_Low_V)
   {
     Safety.LowBatVCritical = false;
-    SSR1.Auto = true;
-    SSR3.Auto = true;
+    SSR1.Auto = SSR1.preCritAuto;
+    SSR3.Auto = SSR3.preCritAuto;
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
-    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_LOW_VBAT:" + String(Daly.get.packVoltage, 1) + "V").c_str(), false);
+    mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_LOW_VBAT:" + String(VSS.V, 1) + "V").c_str(), false);
   }
 
   // Disable Loads and auto-modes if Celldiff is extremely high
   if (!Safety.CVdiffCritical && Daly.get.cellDiff > Safety.Crit_CVdiff)
   {
     Safety.CVdiffCritical = true;
+    // Backup current Auto mode settings
+    SSR1.preCritAuto = SSR1.Auto;
+    SSR2.preCritAuto = SSR2.Auto;
+    SSR3.preCritAuto = SSR3.Auto;
     SSR1.Auto = false;
     SSR2.Auto = false;
     SSR3.Auto = false;
@@ -855,9 +862,9 @@ void user_loop()
   if (Safety.CVdiffCritical && Daly.get.cellDiff < Safety.Rec_CVdiff)
   {
     Safety.CVdiffCritical = false;
-    SSR1.Auto = true;
-    SSR2.Auto = true;
-    SSR3.Auto = true;
+    SSR1.Auto = SSR1.preCritAuto;
+    SSR2.Auto = SSR2.preCritAuto;
+    SSR3.Auto = SSR3.preCritAuto;
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR2_Auto, String(Bool_Decoder[(int)SSR2.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
@@ -884,6 +891,9 @@ void user_loop()
     else
     {
       // Cells probably overheated while discharging, disable loads
+      // Backup current Auto mode settings
+      SSR1.preCritAuto = SSR1.Auto;
+      SSR3.preCritAuto = SSR3.Auto;
       SSR1.Auto = false;
       SSR3.Auto = false;
       mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
@@ -907,8 +917,8 @@ void user_loop()
   {
     Safety.CellTempCritical = false;
     BMS.setCSw = 1;
-    SSR1.Auto = true;
-    SSR3.Auto = true;
+    SSR1.Auto = SSR1.preCritAuto;
+    SSR3.Auto = SSR3.preCritAuto;
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
 #ifdef ENA_ONEWIRE // Optional OneWire support
