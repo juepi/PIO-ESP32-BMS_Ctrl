@@ -1,7 +1,7 @@
 # Introduction 
 This project is intended to be used as an WiFi/MQTT interface to the [Daly Smart BMS Systems](https://www.aliexpress.com/store/4165007) and Victron VE.Direct devices based on my PlatformIO ESP32 Template.  
 Primarily, the code reads status data from the Daly BMS, Victron VE.Direct PV charger and SmartShunt and sends it to your MQTT broker at a configurable interval. It automatically switches the load-SSR on if the batteries are fully charged (2 configurable SOC limits) and off if the batteries are drained (also configureable SOC limit). Load-SSR can also be switched manually by setting the corresponding MQTT topic to `on` or `off`. The primary source for the battery SOC is the **Victron SmartShunt**.  
-Last but not least, the firmware also allows you to handle an external active balancer through an additional SSR as recommended by [Andy](https://www.youtube.com/watch?v=yPmwrPOwC3g). However, i have added a second condition beside the 3.4V cell voltage: we're only enabling the active balancer at a configurable mimimum solar power threshold. This ensures that balancing only kicks in when the battery is reasonably charging.  
+Last but not least, the firmware also allows you to handle an external active balancer through an additional SSR as recommended by [Andy](https://www.youtube.com/watch?v=yPmwrPOwC3g). However, i have added a second condition beside the 3.4V cell voltage: we're only enabling the active balancer if the voltage difference between the highest and lowest cell is above an configurable threshold (defaults to 30mV, configurable via MQTT topic `t_Ctrl_Cfg_SSR2_CdiffOn`).  
 To configure the firmware for your needs, see files `user-config.h` and `mqtt-ota-config.h`, also see [**PlatformIO ESP32 Template**](https://github.com/juepi/PIO-ESP32-Template) readme (WiFi setup etc.).
 
 ## Mandatory Hardware Requirements
@@ -21,7 +21,7 @@ What you are looking at here is the **second major release** of this firmware. I
 The hardware part is also finished now, see [KiCad folder](https://github.com/juepi/PIO-ESP32-BMS_Ctrl/tree/main/KiCad).
 
 ## Safety Guide
-Keep in mind that you are working with potentially dangerous currents depending on the hardware you use. Take any precautions necessary!
+Keep in mind that you are working with potentially dangerous electricity levels depending on the hardware you use. Take any precautions necessary!
 
 ## Local Requirements
 You need to do the initial battery setup on the Daly BMS using the included Bluetooth adapter and Daly's SmartBMS app, as the used [library](https://github.com/maland16/daly-bms-uart) does not support setting configuration parameters. Victron devices can use the VictronConnect App in parallel to the (read only) serial output on the VE.Direct port.  
@@ -36,11 +36,11 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 
 # Bugs and Workarounds
 - Both data frame arrays of the VeDirectFrameHandler (Charger and SmartShunt) keep increasing over time due to transmission/decoding errors (I assume!) leading to new (non-existing) data labels/values that are added to the arrays. VeDirectFrameHandler maxes out at 40 Labels, so this should not lead to any problems (in terms of buffer overflow), not sure how this is possible however as every frame has a checksum. Due to this problem, also garbage values will be decoded every now and then, so I've added additional validity checks when new data was received (especially SoC).
-- VeDirectFrameHandler data from the SmartShunt is "sorted" randomly in the veValue/veName arrays, which breaks the "hardcoded" index numbers I used to get the values from the data arrays. I've fixed this by adding a function to the library that allows you to fetch the arrays index number from a given veName tag. I've not encountered this behavior with the SmartSolar charger yet.
+- VeDirectFrameHandler data from the SmartShunt is "sorted" randomly in the veValue/veName arrays, which breaks the "hardcoded" index numbers I used to get the values from the data arrays. I've fixed this by adding a function to the library that allows you to fetch the arrays index number from a given veName tag. This may also happen with data from the SmartSolar chargers (one out of 2 chargers show this "problem" in my setup).
 - OneWire doesn't seem to work on high-numbered GPIO pins (tested with > 36); using IO4 works fine!
 - It seems (in version **v2.3.0**) that a high frequency toggling of SSR3 relay occured at firmware boot - i have not been able to identify the root cause, it seemed to happen only when SSR3 has been enabled automatically at firmware boot. I think this might occur when changing the SSRs "setState" Topic on the broker (and in the sketch) - after setting, the value is re-read by the firmware as soon as the broker sends out the received value. As the dedicated "on firmware boot" handling of the SSR states was unneccessary anyways, i have completely removed it (**v2.3.1**) and added some additional delay when sending the SSR setStates to the broker in addition to publishing the initial "all off" state to the MQTT broker at firmware boot. The error does not seem to occur any more.
 - An **"offgrid mode"** has been added (**v2.4.3**) as i've experienced that certain battery loads (like my offgrid inverter) causes the OneWire communication to fail. I assume that the inverter causes high noise on the DC wires, but as only OneWire communication is affected, i decided to add this MQTT on/off switchable function to allow skipping OneWire readouts (all sensors will be set to 11°C in offgrid mode, see `t_Ctrl_Cfg_Offgrid_Mode` in `user-config.h`). Plugging in the offgrid inverter is only done in case of a long lasting power outage, which has not happened yet (and hopefully never will), so i can live with that limitation. **A note on failing OneWire communication:** in my case the only way to recover OW-communication was to power down the ESP (remove power from the OW sensors), it seems that the controller inside the sensors hung and rebooting the ESP did not help.
-
+- Although all serial communication to the BMS and Victron devices uses some sort of CRC, it rarely happens that implausible values are reported. To avoid reacting with failsafe actions due to wrong values, several plausibility checks have been added starting with `v2.0.2`.
 
 # Version History
 
@@ -135,7 +135,12 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 ## v2.5.1
 - Use Victron SmartShunt voltage (instead of Daly data) as battery pack voltage source for safety checks
 - recover previous SSR Auto-mode settings instead of enabling all auto modes when recovering from critical states
-  
+
+## v2.6.0
+- Added support for optional 2nd SmartSolar charger (VE.Direct, using GPIO39 for RX; enable in `platformio.ini`)
+- Upgraded to latest `EspSoftwareSerial` library version
+- Add plausibility check for SmartShunt pack voltage (discard value if difference to previous readout is more than `VSS_MAX_V_DIFF` defined in `user-config.h`)
+
 # NOTE on missing VeDirectFrameHandler library
 
 I somehow managed to not to include the VeDirectFrameHandler library into previous commits as it was intended. **This affects all versions prior v2.1.0!**  

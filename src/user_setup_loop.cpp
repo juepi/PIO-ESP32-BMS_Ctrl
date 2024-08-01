@@ -15,6 +15,10 @@ SoftwareSerial VEDSer_Chrg1;
 VeDirectFrameHandler VED_Chrg1;
 SoftwareSerial VEDSer_Shnt;
 VeDirectFrameHandler VED_Shnt;
+#ifdef ENA_SS2
+SoftwareSerial VEDSer_Chrg2;
+VeDirectFrameHandler VED_Chrg2;
+#endif
 
 // Setup OneWire Temperature Sensor(s)
 #ifdef ENA_ONEWIRE // Optional OneWire support
@@ -62,6 +66,25 @@ void user_setup()
   // We don't need TX
   VEDSer_Chrg1.enableIntTx(false);
   VEDSer_Chrg1.flush();
+
+#ifdef ENA_SS2
+  VEDSer_Chrg2.begin(VED_BAUD, SWSERIAL_8N1, PIN_VED_CHRG2_RX, PIN_VED_CHRG2_TX, false, 512);
+  if (!VEDSer_Chrg2)
+  {
+    DEBUG_PRINTLN("Failed to setup VEDSer_Chrg2! Make sure RX/TX pins are free to use for SoftwareSerial!");
+    while (1)
+    {
+      delay(500);
+    }
+  }
+  else
+  {
+    DEBUG_PRINTLN("Initialized VEDSer_Chrg2.");
+  }
+  // We don't need TX
+  VEDSer_Chrg2.enableIntTx(false);
+  VEDSer_Chrg2.flush();
+#endif
 
   VEDSer_Shnt.begin(VED_BAUD, SWSERIAL_8N1, PIN_VED_SHNT_RX, PIN_VED_SHNT_TX, false, 512);
   if (!VEDSer_Shnt)
@@ -115,8 +138,11 @@ void user_loop()
   static const char *VED_MPPT_Decoder[] = {"Off", "V_I_Lim", "Active"};
   static const char *VED_CS_Decoder[] = {"Off", "na", "Fault", "Bulk", "Absorption", "Float"};
   static VED_Charger_data VCHRG1;
+#ifdef ENA_SS2
+  static VED_Charger_data VCHRG2;
+#endif
   // VE.Direct SmartShunt
-  static char VED_SS_Labels[9][6] = {"PID", "V", "I", "P", "CE", "SOC", "TTG", "ALARM", "AR"};
+  static char VED_Data_Labels[10][6] = {"PID", "V", "I", "P", "CE", "SOC", "TTG", "ALARM", "AR", "H20"};
   static VED_Shunt_data VSS;
 #ifdef ENA_ONEWIRE // Optional OneWire support
   static OneWire_data OW;
@@ -183,6 +209,43 @@ void user_loop()
     VCHRG1.ConnStat = 2;
   }
 
+#ifdef ENA_SS2
+  // Handle VE.Direct SmartSolar Charger #2
+  if (VEDSer_Chrg2.available())
+  {
+    while (VEDSer_Chrg2.available())
+    {
+      VED_Chrg2.rxData(VEDSer_Chrg2.read());
+    }
+    if (VCHRG2.lastDecodedFr < VED_Chrg2.frameCounter)
+    {
+      // new frame decoded from VeDirectFrameHandler
+      VCHRG2.lastUpdate = UptimeSeconds;
+      VCHRG2.lastDecodedFr = VED_Chrg2.frameCounter;
+      // assume connection OK
+      VCHRG2.ConnStat = 1;
+      // Charger #2 does not obey same data order as charger #1, "H20" seems to have a different index
+      if (FirstLoop)
+      {
+        // Get correct index by name
+        VCHRG2.iH20 = VED_Chrg2.getIndexByName(VED_Data_Labels[i_CHRG_LBL_H20_CH2]);
+      }
+
+      // Store new data in struct (only PPV needed here, everything else will just be copied out to MQTT topics)
+      VCHRG2.PPV = atoi(VED_Chrg2.veValue[VCHRG2.iPPV]);
+    }
+    // grant time for background tasks
+    delay(1);
+  }
+
+  // Verify if connection to VE.Direct device is alive
+  if ((UptimeSeconds - VCHRG2.lastUpdate) > VED_TIMEOUT)
+  {
+    // Connection timed out (no valid data received within timeout period)
+    VCHRG1.ConnStat = 2;
+  }
+#endif
+
   // Handle VE.Direct SmartShunt
   if (VEDSer_Shnt.available())
   {
@@ -201,19 +264,36 @@ void user_loop()
       // Battery Voltage (in mV)
       if (VSS.iV == 255)
       {
-        VSS.iV = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_V]);
+        VSS.iV = VED_Shnt.getIndexByName(VED_Data_Labels[i_SS_LBL_V]);
       }
       if (VSS.iV != 255)
       {
         if ((atoi(VED_Shnt.veValue[VSS.iV]) > 20000) && (atoi(VED_Shnt.veValue[VSS.iV]) < 30000))
         {
-          VSS.V = atof(VED_Shnt.veValue[VSS.iV]) / 1000;
+          if (VSS.V != 0)
+          {
+            // Check plausibility of new value
+            if (abs(atof(VED_Shnt.veValue[VSS.iV]) / 1000 - VSS.V) < VSS_MAX_V_DIFF)
+            {
+              // new value plausible
+              VSS.V = atof(VED_Shnt.veValue[VSS.iV]) / 1000;
+            }
+            else
+            {
+              mqttClt.publish(t_Ctrl_StatT, String("VSS_V_Unplausible").c_str(), false);
+            }
+          }
+          else
+          {
+            // firmware start (VSS.V = 0)
+            VSS.V = atof(VED_Shnt.veValue[VSS.iV]) / 1000;
+          }
         }
       }
       // Battery Current (in mA)
       if (VSS.iI == 255)
       {
-        VSS.iI = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_I]);
+        VSS.iI = VED_Shnt.getIndexByName(VED_Data_Labels[i_SS_LBL_I]);
       }
       if (VSS.iI != 255)
       {
@@ -225,7 +305,7 @@ void user_loop()
       // Battery Power (in W)
       if (VSS.iP == 255)
       {
-        VSS.iP = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_P]);
+        VSS.iP = VED_Shnt.getIndexByName(VED_Data_Labels[i_SS_LBL_P]);
       }
       if (VSS.iP != 255)
       {
@@ -237,7 +317,7 @@ void user_loop()
       // Consumed Energy (in mAh)
       if (VSS.iCE == 255)
       {
-        VSS.iCE = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_CE]);
+        VSS.iCE = VED_Shnt.getIndexByName(VED_Data_Labels[i_SS_LBL_CE]);
       }
       if (VSS.iCE != 255)
       {
@@ -249,7 +329,7 @@ void user_loop()
       // Battery SoC
       if (VSS.iSOC == 255)
       {
-        VSS.iSOC = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_SOC]);
+        VSS.iSOC = VED_Shnt.getIndexByName(VED_Data_Labels[i_SS_LBL_SOC]);
       }
       if (VSS.iSOC != 255)
       {
@@ -297,7 +377,7 @@ void user_loop()
       // Battery TTG (time-to-empty)
       if (VSS.iTTG == 255)
       {
-        VSS.iTTG = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_TTG]);
+        VSS.iTTG = VED_Shnt.getIndexByName(VED_Data_Labels[i_SS_LBL_TTG]);
       }
       if (VSS.iTTG != 255)
       {
@@ -310,11 +390,11 @@ void user_loop()
       // Get .veValue indexes for informational data (no data verification)
       if (VSS.iALARM == 255)
       {
-        VSS.iALARM = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_ALARM]);
+        VSS.iALARM = VED_Shnt.getIndexByName(VED_Data_Labels[i_SS_LBL_ALARM]);
       }
       if (VSS.iAR == 255)
       {
-        VSS.iAR = VED_Shnt.getIndexByName(VED_SS_Labels[i_SS_LBL_AR]);
+        VSS.iAR = VED_Shnt.getIndexByName(VED_Data_Labels[i_SS_LBL_AR]);
       }
 
       if (VSS.ConnStat == 1)
@@ -476,15 +556,14 @@ void user_loop()
   {
     // Fill array with current power value if we've just booted
     if (FirstLoop)
+    {
       for (int i = 0; i < 10; i++)
       {
         VCHRG1.Avg_PPV_Arr[i] = VCHRG1.PPV;
       }
-    LastAvgCalc = UptimeSeconds;
+    }
     // Update array element with current PV power
     VCHRG1.Avg_PPV_Arr[UpdAvgArrIndx] = VCHRG1.PPV;
-    // rotate to next array element
-    UpdAvgArrIndx++;
     if (UpdAvgArrIndx > 9)
     {
       UpdAvgArrIndx = 0;
@@ -496,8 +575,30 @@ void user_loop()
       Pavg_Sum += VCHRG1.Avg_PPV_Arr[i];
     }
     VCHRG1.Avg_PPV = Pavg_Sum / 10;
-    // Update PPV power level
-    if (VCHRG1.Avg_PPV >= PV.HighPPV)
+    PV.AvgPPVSum = VCHRG1.Avg_PPV;
+#ifdef ENA_SS2
+    // Fill array with current power value if we've just booted
+    if (FirstLoop)
+    {
+      for (int i = 0; i < 10; i++)
+      {
+        VCHRG2.Avg_PPV_Arr[i] = VCHRG2.PPV;
+      }
+    }
+    // Update array element with current PV power
+    VCHRG2.Avg_PPV_Arr[UpdAvgArrIndx] = VCHRG2.PPV;
+    // Recalculate 1hr power average
+    Pavg_Sum = 0;
+    for (int i = 0; i < 10; i++)
+    {
+      Pavg_Sum += VCHRG2.Avg_PPV_Arr[i];
+    }
+    VCHRG2.Avg_PPV = Pavg_Sum / 10;
+    PV.AvgPPVSum = VCHRG1.Avg_PPV + VCHRG2.Avg_PPV;
+#endif
+
+    // Update PPV power level (sum of all chargers)
+    if (PV.AvgPPVSum >= PV.HighPPV)
     {
       PV.PwrLvl = 1; // High avg PV power
     }
@@ -505,6 +606,13 @@ void user_loop()
     {
       PV.PwrLvl = 0; // Low avg PV power
     }
+    // rotate to next array element
+    UpdAvgArrIndx++;
+    if (UpdAvgArrIndx > 9)
+    {
+      UpdAvgArrIndx = 0;
+    }
+    LastAvgCalc = UptimeSeconds;
   }
 
   //
@@ -609,6 +717,56 @@ void user_loop()
       // report (broken) connection state
       mqttClt.publish(t_VED_C1_CSTAT, String(ConnStat_Decoder[VCHRG1.ConnStat]).c_str(), true);
     }
+
+#ifdef ENA_SS2
+    // VE.Direct Charger #2
+    if (VCHRG2.ConnStat <= 1)
+    {
+      // Decode most important CS values to text
+      switch (atoi(VED_Chrg2.veValue[VCHRG2.iCS]))
+      {
+      case 0 ... 5:
+        mqttClt.publish(t_VED_C2_CS, String(VED_CS_Decoder[atoi(VED_Chrg2.veValue[VCHRG2.iCS])]).c_str(), true);
+        break;
+      default:
+        mqttClt.publish(t_VED_C2_CS, String(VED_Chrg2.veValue[VCHRG2.iCS]).c_str(), true);
+        break;
+      }
+
+      // Decode most important ERR values to text
+      switch (atoi(VED_Chrg2.veValue[VCHRG2.iERR]))
+      {
+      case 0:
+        mqttClt.publish(t_VED_C2_ERR, String("Ok").c_str(), true);
+        break;
+      case 2:
+        mqttClt.publish(t_VED_C2_ERR, String("Vbat_HI").c_str(), true);
+        break;
+      case 17:
+        mqttClt.publish(t_VED_C2_ERR, String("Ch_Temp_HI").c_str(), true);
+        break;
+      case 18:
+        mqttClt.publish(t_VED_C2_ERR, String("Ch_I_HI").c_str(), true);
+        break;
+      default:
+        mqttClt.publish(t_VED_C2_CS, String(VED_Chrg2.veValue[VCHRG2.iERR]).c_str(), true);
+        break;
+      }
+
+      mqttClt.publish(t_VED_C2_PPV, String(VED_Chrg2.veValue[VCHRG2.iPPV]).c_str(), true);
+      mqttClt.publish(t_VED_C2_IB, String((atof(VED_Chrg2.veValue[VCHRG2.iIB]) / 1000), 2).c_str(), true);
+      mqttClt.publish(t_VED_C2_MPPT, String(VED_MPPT_Decoder[atoi(VED_Chrg2.veValue[VCHRG2.iMPPT])]).c_str(), true);
+      mqttClt.publish(t_VED_C2_H20, String((atoi(VED_Chrg2.veValue[VCHRG2.iH20]) * 10)).c_str(), true);
+      mqttClt.publish(t_VED_C2_CSTAT, String(ConnStat_Decoder[VCHRG2.ConnStat]).c_str(), true);
+      mqttClt.publish(t_VED_C2_AvgPPV, String(VCHRG2.Avg_PPV, 0).c_str(), true);
+      delay(100);
+    }
+    else
+    {
+      // report (broken) connection state
+      mqttClt.publish(t_VED_C2_CSTAT, String(ConnStat_Decoder[VCHRG2.ConnStat]).c_str(), true);
+    }
+#endif
 
     // VE.Direct SmartShunt
     if (VSS.ConnStat <= 1)

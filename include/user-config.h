@@ -31,6 +31,10 @@ extern void user_loop();
 extern Daly_BMS_UART bms;
 extern SoftwareSerial VEDSer_Chrg1;
 extern VeDirectFrameHandler VED_Chrg1;
+#ifdef ENA_SS2
+extern SoftwareSerial VEDSer_Chrg2;
+extern VeDirectFrameHandler VED_Chrg2;
+#endif
 extern SoftwareSerial VEDSer_Shnt;
 extern VeDirectFrameHandler VED_Shnt;
 #ifdef ENA_ONEWIRE // Optional OneWire support
@@ -176,15 +180,23 @@ extern DallasTemperature OWtemp;
 #define PIN_VED_CHRG1_RX 33 // RX for SoftwareSerial
 #define PIN_VED_CHRG1_TX 21 // TX for SoftwareSerial (unused)
 
-// Array element indexes of VED_Chrg1.veValue which will be sent to the MQTT broker (ATTN: valid for SmartSolar 75/15 with firmware 1.61)
+#ifdef ENA_SS2
+// SmartSolar 100/30 Charger settings (charger #2)
+#define PIN_VED_CHRG2_RX 39 // RX for SoftwareSerial
+#define PIN_VED_CHRG2_TX 40 // TX for SoftwareSerial (unused)
+#endif
+
+// Array element indexes of VED_Chrg*.veValue which will be sent to the MQTT broker (ATTN: valid for SmartSolar with firmware 1.61 and later)
 // See Victron Documentation: https://www.victronenergy.com/support-and-downloads/technical-information# --> VE.Direct protocol
-#define i_CHRG_LBL_VB 3   // battery voltage
-#define i_CHRG_LBL_IB 4   // charging current
-#define i_CHRG_LBL_PPV 6  // present PV Power
-#define i_CHRG_LBL_CS 7   // charger state
-#define i_CHRG_LBL_MPPT 8 // MPPT state
-#define i_CHRG_LBL_ERR 10 // error state
-#define i_CHRG_LBL_H20 14 // yield today (in 10Wh increments)
+#define i_CHRG_LBL_VB 3      // battery voltage
+#define i_CHRG_LBL_IB 4      // charging current
+#define i_CHRG_LBL_PPV 6     // present PV Power
+#define i_CHRG_LBL_CS 7      // charger state
+#define i_CHRG_LBL_MPPT 8    // MPPT state
+#define i_CHRG_LBL_ERR 10    // error state
+#define i_CHRG_LBL_H20 14    // yield today (in 10Wh increments)
+#define i_CHRG_LBL_H20_CH2 9 // yield for Charger #2 (array index for string "H20" in VED_Data_Labels array)
+
 // MQTT Topics for published data
 #define t_VED_C1_PPV TOPTREE "VC1_PPV"
 #define t_VED_C1_IB TOPTREE "VC1_IB"
@@ -195,6 +207,17 @@ extern DallasTemperature OWtemp;
 #define t_VED_C1_H20 TOPTREE "VC1_H20"
 #define t_VED_C1_CSTAT TOPTREE "VC1_CSTAT"
 #define t_VED_C1_AvgPPV TOPTREE "VC1_AvgPPV" // Calculated 1hr PV power average
+#ifdef ENA_SS2
+#define t_VED_C2_PPV TOPTREE "VC2_PPV"
+#define t_VED_C2_IB TOPTREE "VC2_IB"
+#define t_VED_C2_VB TOPTREE "VC2_VB"
+#define t_VED_C2_ERR TOPTREE "VC2_ERR"
+#define t_VED_C2_CS TOPTREE "VC2_CS"
+#define t_VED_C2_MPPT TOPTREE "VC2_MPPT"
+#define t_VED_C2_H20 TOPTREE "VC2_H20"
+#define t_VED_C2_CSTAT TOPTREE "VC2_CSTAT"
+#define t_VED_C2_AvgPPV TOPTREE "VC2_AvgPPV" // Calculated 1hr PV power average
+#endif
 
 // SmartShunt 500 settings
 #define PIN_VED_SHNT_RX 35 // RX for SoftwareSerial
@@ -202,11 +225,12 @@ extern DallasTemperature OWtemp;
 
 // Readout error detection
 #define VSS_MAX_SOC_DIFF 50 // max. allowed diff of SOC value between 2 readouts (larger diff -> new value ignored) ATTN: these are 1/10th of a percent!
+#define VSS_MAX_V_DIFF 0.5f // max. allowed pack voltage difference between 2 readouts
 
 // Array element indexes of VED_Shnt.veValue which will be sent to the MQTT broker (ATTN: valid for SmartShunt 500 with firmware 4.12)
 // See Victron Documentation: https://www.victronenergy.com/support-and-downloads/technical-information# --> VE.Direct protocol
 // ATTN: This DOES NOT WORK with the SmartShunt! The data in .veName and .veValue arrays are in different order nearly every ESP boot
-// the following defines refer to the elements in the VED_SS_Labels array, which is used to get the corresponding indexes from .veName
+// the following defines refer to the elements in the VED_Data_Labels array, which is used to get the corresponding indexes from .veName
 #define i_SS_LBL_PID 0   // Device PID
 #define i_SS_LBL_V 1     // battery voltage [mV]
 #define i_SS_LBL_I 2     // battery current [mA]
@@ -265,7 +289,7 @@ struct VED_Charger_data
     int iCS = i_CHRG_LBL_CS;
     int iMPPT = i_CHRG_LBL_MPPT;
     int iERR = i_CHRG_LBL_ERR;
-    int iH20 = i_CHRG_LBL_H20;
+    int iH20 = i_CHRG_LBL_H20;  // ATTN: different index for Charger #2; will be updated to valid value by the getIndexByName function at boot
     uint32_t lastUpdate = 0;    // to verify connection is active
     uint32_t lastDecodedFr = 0; // uptime of last decoded frame
     int ConnStat = 0;           // Connection Status
@@ -321,8 +345,9 @@ struct Balancer_Config
 // Config struct for PV specific settings
 struct PV_Config
 {
-    int PwrLvl = 0;    // current PV power level (0=low, 1=high)
-    int HighPPV = 170; // > Avg_PPV considered as high (configured via MQTT topic)
+    int PwrLvl = 0;      // current PV power level (0=low, 1=high)
+    int HighPPV = 170;   // > Avg_PPV considered as high (configured via MQTT topic)
+    float AvgPPVSum = 0; // 1hr average PV power sum of all chargers (only used internally)
 };
 
 // Config struct for Safety features
