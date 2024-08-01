@@ -139,7 +139,7 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 ## v2.6.0
 - Added support for optional 2nd SmartSolar charger (VE.Direct, using GPIO39 for RX; enable in `platformio.ini`)
 - Upgraded to latest `EspSoftwareSerial` library version
-- Add plausibility check for SmartShunt pack voltage (discard value if difference to previous readout is more than `VSS_MAX_V_DIFF` defined in `user-config.h`)
+- Added plausibility check for SmartShunt pack voltage (discard value if difference to previous readout is more than `VSS_MAX_V_DIFF` defined in `user-config.h`)
 
 # NOTE on missing VeDirectFrameHandler library
 
