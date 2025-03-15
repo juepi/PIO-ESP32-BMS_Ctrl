@@ -10,7 +10,7 @@ To configure the firmware for your needs, see files `user-config.h` and `mqtt-ot
 - a Lithium battery fitting your requirements and BMS
 - 1x [Victron SmartSolar](https://www.victronenergy.com/solar-charge-controllers/smartsolar-100-30-100-50) charger (or any other charger supporting the text version of the VE.Direct protocol)
 - 1x [Victron SmartShunt](https://www.victronenergy.com/battery-monitors/smart-battery-shunt) with the amps required for your setup
-- 3x [ADUM1201 UART Isolators](https://aliexpress.com/item/1005003649567525.html) or any other digital isolators you prefer
+- 3x [ADUM1201 UART Isolators](https://www.amazon.de/s?k=adum1201) or any other digital isolators you prefer
 - 1x [AQW212EH Optocoupler](https://na.industrial.panasonic.com/products/relays-contactors/semiconductor-relays/lineup/photomos-relays/series/12512/model/12513)
 - 1x [Active Balancer](https://aliexpress.com/item/4001176521939.html)
 - a local WiFi network with a MQTT broker
@@ -28,7 +28,7 @@ You need to do the initial battery setup on the Daly BMS using the included Blue
 An active balancer is highly recommended, as the internal passive balancer of the Daly BMS is useless. [Andy from the Off-Grid Garage](https://www.youtube.com/watch?v=yPmwrPOwC3g) has picked up this topic recently, and i've decided to add the active-balancing control as he suggests it into the firmware. Note that you will need an active balancer that will allow you to start the balancing by shorting 2 pins, like [this one from AliExpress](https://aliexpress.com/item/4001176521939.html). You will need to remove the solder chunk from the pads labeled "Run", this will reveal 2 seperate soldering pads. Solder 2 wires to the pads and connect them to an optocoupler output, in example [AQW212EH](https://na.industrial.panasonic.com/products/relays-contactors/semiconductor-relays/lineup/photomos-relays/series/12512/model/12513).
 
 ## An important notice on connecting the ESP32 to your BMS and VE.Direct
-Take caution when connecting the ESP to the UART ports: the internal electronics of the BMS (including UART port) use "battery ground", whereas other connected devices (i.e. load, charger) use the "power ground". **NEVER EVER** connect these different grounds or magic smoke will leave your electronics! To avoid this, make sure to isolate **anything** coming from or going into the UART ports of the Daly BMS and your VE.Direct devices. For UART RX/TX, a **ADUM1201** isolator chip should works well for me.
+Take caution when connecting the ESP to the UART ports: the internal electronics of the BMS (including UART port) use "battery ground", whereas other connected devices (i.e. load, charger) use the "power ground". **NEVER EVER** connect these different grounds or magic smoke will leave your electronics! To avoid this, make sure to isolate **anything** coming from or going into the UART ports of the Daly BMS and your VE.Direct devices. For UART RX/TX, a **ADUM1201** isolator chip works well for me.
 
 ## Credits
 Thanks to [maland16 and softwarecrash](https://github.com/maland16/daly-bms-uart) for providing a library to interact with the Daly Smart BMS.  
