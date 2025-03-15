@@ -151,7 +151,6 @@ void user_loop()
   //
   // Start the action
   //
-  // on boot, wait a second to ensure we have received data from the VE.Direct devices
   if (FirstLoop)
   {
     // Publish initial SSR active and desired states to the broker to match the firmware boot state of ALL OFF
@@ -161,6 +160,8 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR2_actState, String(Bool_Decoder[0]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_setState, String(Bool_Decoder[0]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_actState, String(Bool_Decoder[0]).c_str(), true);
+    // Also publish initial alarm state
+    mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[0]).c_str(), true);
     // Use MqttDelay to ensure that we re-read the freshly published settings from the broker
     MqttDelay(1000);
   }
@@ -632,15 +633,6 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR1_actState, String(Bool_Decoder[(int)SSR1.actState]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR2_actState, String(Bool_Decoder[(int)SSR2.actState]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_actState, String(Bool_Decoder[(int)SSR3.actState]).c_str(), true);
-    // Set alarm flag if we're in a critical condition
-    if (Safety.CellTempCritical || Safety.ChrgTempCritical || Safety.ConnStateCritical || Safety.CVdiffCritical || Safety.LowBatVCritical)
-    {
-      mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[1]).c_str(), true);
-    }
-    else
-    {
-      mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[0]).c_str(), true);
-    }
 
     // Daly BMS
     if (BMS.ConnStat <= 1)
@@ -952,6 +944,7 @@ void user_loop()
 #else
     mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CONNSTAT:" + String(VSS.ConnStat) + "/" + String(BMS.ConnStat)).c_str(), false);
 #endif
+    mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[1]).c_str(), true);
   }
   // Check if communcation has been restored to all devices
 #ifdef ENA_ONEWIRE // Optional OneWire support
@@ -970,6 +963,7 @@ void user_loop()
 #else
     mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CONNSTAT").c_str(), false);
 #endif
+    mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[0]).c_str(), true);
   }
 
   // Disable loads and auto-modes when battery pack voltage is below critical threshold
@@ -986,6 +980,7 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_StatT, String("CRIT_SAFETY_LOW_VBAT:" + String(VSS.V, 1) + "V").c_str(), false);
+    mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[1]).c_str(), true);
   }
   // Check if we recovered from undervoltage critical condition
   if (Safety.LowBatVCritical && VSS.V > Safety.Rec_Bat_Low_V)
@@ -996,6 +991,7 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR1_Auto, String(Bool_Decoder[(int)SSR1.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_LOW_VBAT:" + String(VSS.V, 1) + "V").c_str(), false);
+    mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[0]).c_str(), true);
   }
 
   // Disable Loads and auto-modes if Celldiff is extremely high
@@ -1015,6 +1011,7 @@ void user_loop()
     SSR1.setState = false;
     SSR3.setState = false;
     mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CDIFF:" + String(Daly.get.cellDiff, 0)).c_str(), false);
+    mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[1]).c_str(), true);
   }
   // Check if we recovered from Cell diff critical condition
   if (Safety.CVdiffCritical && Daly.get.cellDiff < Safety.Rec_CVdiff)
@@ -1027,6 +1024,7 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR2_Auto, String(Bool_Decoder[(int)SSR2.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_Auto, String(Bool_Decoder[(int)SSR3.Auto]).c_str(), true);
     mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CDIFF:" + String((Daly.get.cellDiff, 0))).c_str(), false);
+    mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[0]).c_str(), true);
   }
 
   //
@@ -1040,11 +1038,12 @@ void user_loop()
 #endif
   {
     Safety.CellTempCritical = true;
-    if (PV.PwrLvl == 2)
+    if (PV.PwrLvl == 1)
     {
-      // Cells probably overheated while charging, disable Daly Charge FET
+      // High PV level -> Cells probably overheated while charging, disable Daly Charge FET
       BMS.setCSw = 0;
       mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP: BMS Charging disabled").c_str(), false);
+      mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[1]).c_str(), true);
     }
     else
     {
@@ -1064,6 +1063,7 @@ void user_loop()
 #else
       mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CTEMP:" + String(Daly.get.tempAverage, 0)).c_str(), false);
 #endif
+      mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[1]).c_str(), true);
     }
   }
   // Check if all cells recovered from ciritcal cell temperatures
@@ -1084,6 +1084,7 @@ void user_loop()
 #else
     mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CTEMP:" + String(Daly.get.tempAverage, 0)).c_str(), false);
 #endif
+    mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[0]).c_str(), true);
   }
 
   // Check charger temperature (with OneWire only)
@@ -1094,6 +1095,7 @@ void user_loop()
     Safety.ChrgTempCritical = true;
     BMS.setCSw = 0;
     mqttClt.publish(t_Ctrl_StatT, String("CRITICAL_SAFETY_CHRGTEMP:" + String(OW.Temperature[i_CHRG_SENS], 0)).c_str(), false);
+    mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[1]).c_str(), true);
   }
   // Check if charger temperature recovered
   if (Safety.ChrgTempCritical && OW.Temperature[i_CHRG_SENS] < Safety.Rec_ChrgTemp)
@@ -1101,6 +1103,7 @@ void user_loop()
     Safety.ChrgTempCritical = false;
     BMS.setCSw = 1;
     mqttClt.publish(t_Ctrl_StatT, String("RECOVER_SAFETY_CHRGTEMP:" + String(OW.Temperature[i_CHRG_SENS], 0)).c_str(), false);
+    mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[0]).c_str(), true);
   }
 #endif
 

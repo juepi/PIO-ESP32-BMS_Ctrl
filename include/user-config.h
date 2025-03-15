@@ -77,8 +77,8 @@ extern DallasTemperature OWtemp;
 #define CRIT_BAT_LOW_V 24.4f    // Critical battery pack undervoltage
 
 // MQTT Topics (Subscriptions)
-#define t_Ctrl_Cfg_Safety_CritCdiff TOPTREE "Cfg/Safety_CritCdiff"
-#define t_Ctrl_Cfg_Offgrid_Mode TOPTREE "Cfg/Safety_OffgridMode"
+#define t_Ctrl_Cfg_Safety_CritCdiff TOPTREE "Cfg/Safety_CritCdiff" // MQTT configurable critical cell voltage difference in mV at which loads are disabled
+#define t_Ctrl_Cfg_Offgrid_Mode TOPTREE "Cfg/Safety_OffgridMode"   // MQTT configurable offgrid mode [on/off] (disables OneWire sensors)
 
 //
 // OneWire Bus

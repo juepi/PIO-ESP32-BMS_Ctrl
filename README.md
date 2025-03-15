@@ -141,6 +141,10 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Upgraded to latest `EspSoftwareSerial` library version
 - Added plausibility check for SmartShunt pack voltage (discard value if difference to previous readout is more than `VSS_MAX_V_DIFF` defined in `user-config.h`)
 
+## v2.6.1
+- Immediately publish Controller-Alarm flag via MQTT when alarm occurs (or recovers)
+- Fixed error in cell temperature alarm handling
+
 # NOTE on missing VeDirectFrameHandler library
 
 I somehow managed to not to include the VeDirectFrameHandler library into previous commits as it was intended. **This affects all versions prior v2.1.0!**  
