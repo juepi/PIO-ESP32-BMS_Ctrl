@@ -137,8 +137,8 @@ extern DallasTemperature OWtemp;
 // Updated by MQTT Topics at firmware boot
 //
 #define DEF_OFF_LOAD_SOC 10   // Default SOC at which to disable the load
-#define DEF_LP_ON_LOAD_SOC 90 // SOC at which to enable the load at low PV power
-#define DEF_HP_ON_LOAD_SOC 60 // SOC at which to enable the load at high PV power
+#define DEF_LP_ON_LOAD_SOC 60 // SOC at which to enable the load at low PV power
+#define DEF_HP_ON_LOAD_SOC 30 // SOC at which to enable the load at high PV power
 
 // MQTT Publish only
 #define t_Ctrl_Cfg_SSR1_actState TOPTREE "Cfg/SSR1_actState" // Actual state of SSR1 GPIO (on/off)
@@ -164,9 +164,9 @@ extern DallasTemperature OWtemp;
 // Active Balancer Settings (SSR2)
 //
 // Default settings, Updated by MQTT Topics at firmware boot
-#define DEF_BAL_ON_CELLDIFF 30 // If cell voltage difference is higher than this [mV] AND
+#define DEF_BAL_ON_CELLDIFF 15 // If cell voltage difference is higher than this [mV] AND
 #define DEF_BAL_ON_CELLV 3400  // if a cell has reached this voltage level [mV], enable the balancer
-#define DEF_BAL_OFF_CELLV 3150 // DISABLE balancer if a cell has fallen below this voltage level [mV]
+#define DEF_BAL_OFF_CELLV 3350 // DISABLE balancer if a cell has fallen below this voltage level [mV]
 
 // MQTT Publish only
 #define t_Ctrl_Cfg_SSR2_actState TOPTREE "Cfg/SSR2_actState" // Actual state of SSR2 GPIO (on/off)

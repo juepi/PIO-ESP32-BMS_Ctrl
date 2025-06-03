@@ -148,7 +148,6 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 ## v2.7.0
 - Added web interface (network status checking / reboot ESP)
 - Upgraded underlying [**PIO-ESP32-Template to v1.4.0**](https://github.com/juepi/PIO-ESP32-Template)
-- ESP will automatically reset after 2hrs without WiFi+MQTT (see `MAX_NETFAIL_RECONN` in `wifi-config.h`)
 
 # NOTE on missing VeDirectFrameHandler library
 

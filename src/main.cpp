@@ -76,11 +76,13 @@ void loop()
         // Still no network/broker available, wait for NET_RECONNECT_INTERVAL
         netfail_reconn_millis = millis() + NET_RECONNECT_INTERVAL;
         netfail_reconn_tries++;
+#ifdef MAX_NETFAIL_RECONN
         if (netfail_reconn_tries > MAX_NETFAIL_RECONN)
         {
           // we've tried long enough, let's reset the ESP!
           ESP.restart();
         }
+#endif // MAX_NETFAIL_RECONN
       }
       else
       {

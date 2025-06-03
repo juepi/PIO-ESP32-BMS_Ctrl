@@ -48,9 +48,6 @@ const char *index_html PROGMEM = R"(
 <b>WiFi RSSI:</b> %TEMPL_WIFI_RSSI% dBm<br>
 <b>MQTT:</b> %TEMPL_MQTT_STAT%<br>
 <b>Uptime:</b> %TEMPL_UPTIME%<br>
-<form action="/get" method="get">
-    <input type="submit" name="action" value="Reboot" />
-</form>
 </p>
     <h3>Control ESP</h3>
 <p>
@@ -138,6 +135,7 @@ void user_setup()
   OWtemp.begin();
   OWtemp.setResolution(OWRES);
 #endif
+
   // AsyncWebserver initialization
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
             { request->send(200, "text/html", index_html, processor); });
@@ -1218,7 +1216,6 @@ void user_loop()
   }
 }
 
-
 /*
  * User Functions
  * =====================================
@@ -1255,4 +1252,3 @@ String processor(const String &var)
   }
   return String();
 }
-

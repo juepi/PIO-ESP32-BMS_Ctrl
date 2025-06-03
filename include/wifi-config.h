@@ -29,7 +29,7 @@ extern const int NetFailAction;         // Behavior on network / MQTT broker out
 extern int NetState;                    // Global int defining network status (Up/down/failure)
 extern unsigned long NetRecoveryMillis; // store MCU "uptime" of the last network recovery (informational only)
 #define NET_RECONNECT_INTERVAL 60000    // try to reconnect to WiFi / Broker every minute at Netstate failure
-#define MAX_NETFAIL_RECONN 120          // how many times to try to reconnect before resetting the ESP
+//#define MAX_NETFAIL_RECONN 360          // how many times to try to reconnect before resetting the ESP (uncomment to disable ESP reset)
 
 // Defines for NetStates
 #define NET_UP 0   // WiFi and MQTT broker connected
