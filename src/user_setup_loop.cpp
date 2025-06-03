@@ -34,6 +34,37 @@ Balancer_Config SSR2;
 PV_Config PV;
 Safety_Config Safety;
 
+// Web Server stuff
+const char *index_html PROGMEM = R"(
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32-BMS-Controller v%TEMPL_VERSION%</title>
+    <meta http-equiv="refresh" content="10" />
+</head>
+<body>
+    <h3>System Status</h3>
+<p>
+<b>WiFi RSSI:</b> %TEMPL_WIFI_RSSI% dBm<br>
+<b>MQTT:</b> %TEMPL_MQTT_STAT%<br>
+<b>Uptime:</b> %TEMPL_UPTIME%<br>
+<form action="/get" method="get">
+    <input type="submit" name="action" value="Reboot" />
+</form>
+</p>
+    <h3>Control ESP</h3>
+<p>
+<form action="/get" method="get">
+    <input type="submit" name="action" value="Reboot" />
+</form>
+</p> 
+</body>
+</html>
+)";
+const char *PARAM_MESSAGE PROGMEM = "action";
+
+AsyncWebServer server(80);
+
 /*
  * User Setup Function
  * ========================================================================
@@ -107,6 +138,27 @@ void user_setup()
   OWtemp.begin();
   OWtemp.setResolution(OWRES);
 #endif
+  // AsyncWebserver initialization
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+            { request->send(200, "text/html", index_html, processor); });
+  server.on("/get", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+    String message;
+    if (request->hasParam(PARAM_MESSAGE)) {
+      message = request->getParam(PARAM_MESSAGE)->value();
+      if (message == "Reboot") {
+        if (UptimeSeconds < 10)
+        {
+          request->redirect("/");
+        }
+        else
+        {
+          ESP.restart();
+        }
+      }
+    } });
+  server.onNotFound(notFound);
+  server.begin();
 }
 
 /*
@@ -118,14 +170,10 @@ void user_loop()
   //
   // Declare Vars
   //
-  static bool FirstLoop = true; // Firmware startup
   // Daly BMS
   static Daly_BMS_data BMS;
   static int CDiff_Unplausible_Cnt = 0;
   static float Prev_CDiff = 0;
-  // Uptime calculation
-  static uint32_t UptimeSeconds = 0;
-  static unsigned long oldMillis = 0;
   // Other helpers
   static uint32_t MQTTLastDataPublish = 0;
   static const char *Bool_Decoder[] = {"off", "on"};
@@ -151,7 +199,7 @@ void user_loop()
   //
   // Start the action
   //
-  if (FirstLoop)
+  if (JustBooted)
   {
     // Publish initial SSR active and desired states to the broker to match the firmware boot state of ALL OFF
     mqttClt.publish(t_Ctrl_Cfg_SSR1_setState, String(Bool_Decoder[0]).c_str(), true);
@@ -164,19 +212,6 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[0]).c_str(), true);
     // Use MqttDelay to ensure that we re-read the freshly published settings from the broker
     MqttDelay(1000);
-  }
-
-  //
-  // Increase Uptime counter
-  //
-  if ((millis() - oldMillis) >= 1000)
-  {
-    oldMillis = millis();
-    UptimeSeconds++;
-#ifdef ONBOARD_LED
-    // Toggle LED every second
-    ToggleLed(LED, 1, 1);
-#endif
   }
 
   //
@@ -226,7 +261,7 @@ void user_loop()
       // assume connection OK
       VCHRG2.ConnStat = 1;
       // Charger #2 does not obey same data order as charger #1, "H20" seems to have a different index
-      if (FirstLoop)
+      if (JustBooted)
       {
         // Get correct index by name
         VCHRG2.iH20 = VED_Chrg2.getIndexByName(VED_Data_Labels[i_CHRG_LBL_H20_CH2]);
@@ -336,7 +371,7 @@ void user_loop()
       {
         if ((atoi(VED_Shnt.veValue[VSS.iSOC]) >= 0) && (atoi(VED_Shnt.veValue[VSS.iSOC]) <= 1000))
         {
-          if (FirstLoop)
+          if (JustBooted)
           {
             // we have to assume the first readout is correct
             VSS.SOC = atof(VED_Shnt.veValue[VSS.iSOC]) / 10;
@@ -418,7 +453,7 @@ void user_loop()
   //
   // Gather data from Daly BMS
   //
-  if ((UptimeSeconds - BMS.lastUpdate) >= DALY_UPDATE_INTERVAL || FirstLoop)
+  if ((UptimeSeconds - BMS.lastUpdate) >= DALY_UPDATE_INTERVAL || JustBooted)
   {
     // Fetch data from BMS
     // ATTN: takes between 640 and 710ms!
@@ -429,7 +464,7 @@ void user_loop()
       BMS.ConnStat = 1;
 
       // Verify Cell difference
-      if (FirstLoop)
+      if (JustBooted)
       {
         Prev_CDiff = Daly.get.cellDiff;
       }
@@ -482,9 +517,9 @@ void user_loop()
   // Gather data from OneWire sensors
   //
 #ifdef ENA_ONEWIRE // Optional OneWire support
-  if ((UptimeSeconds - OW.lastUpdate) >= OW_UPDATE_INTERVAL || FirstLoop)
+  if ((UptimeSeconds - OW.lastUpdate) >= OW_UPDATE_INTERVAL || JustBooted)
   {
-    if (FirstLoop)
+    if (JustBooted)
     {
       // Check if the correct amount of sensors were found
       if (OWtemp.getDeviceCount() != NUM_OWTEMP)
@@ -553,10 +588,10 @@ void user_loop()
   //
   // Update 1hr power average every 6 minutes
   //
-  if ((UptimeSeconds - LastAvgCalc) >= 360 || FirstLoop)
+  if ((UptimeSeconds - LastAvgCalc) >= 360 || JustBooted)
   {
     // Fill array with current power value if we've just booted
-    if (FirstLoop)
+    if (JustBooted)
     {
       for (int i = 0; i < 10; i++)
       {
@@ -579,7 +614,7 @@ void user_loop()
     PV.AvgPPVSum = VCHRG1.Avg_PPV;
 #ifdef ENA_SS2
     // Fill array with current power value if we've just booted
-    if (FirstLoop)
+    if (JustBooted)
     {
       for (int i = 0; i < 10; i++)
       {
@@ -619,12 +654,12 @@ void user_loop()
   //
   // Publish data to MQTT broker
   //
-  if (((UptimeSeconds - MQTTLastDataPublish) >= DATA_UPDATE_INTERVAL || FirstLoop) && mqttClt.connected())
+  if (((UptimeSeconds - MQTTLastDataPublish) >= DATA_UPDATE_INTERVAL || JustBooted) && mqttClt.connected())
   {
     MQTTLastDataPublish = UptimeSeconds;
 
     // Controller
-    if (FirstLoop)
+    if (JustBooted)
     {
       mqttClt.publish(t_Ctrl_StatT, String("Startup Firmware v" + String(FIRMWARE_VERSION) + " WiFi RSSI: " + String(WiFi.RSSI())).c_str(), false);
     }
@@ -1181,10 +1216,43 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR3_actState, String(Bool_Decoder[(int)SSR3.actState]).c_str(), true);
     delay(100);
   }
-
-  // Reset FirstLoop
-  if (FirstLoop)
-  {
-    FirstLoop = false;
-  }
 }
+
+
+/*
+ * User Functions
+ * =====================================
+ */
+//
+// 404
+//
+void notFound(AsyncWebServerRequest *request)
+{
+  request->send(404, "text/plain", "Not found");
+}
+
+//
+// Website processor to replace templates of our HTML page with useful data
+//
+String processor(const String &var)
+{
+  if (var == "TEMPL_VERSION")
+    return (String(FIRMWARE_VERSION));
+  if (var == "TEMPL_WIFI_RSSI")
+    return (String(WiFi.RSSI()));
+  if (var == "TEMPL_UPTIME")
+    return (String(UptimeSeconds));
+  if (var == "TEMPL_MQTT_STAT")
+  {
+    if (mqttClt.connected())
+    {
+      return F("<font color=\"green\">connected</font>");
+    }
+    else
+    {
+      return F("<font color=\"red\">not connected!</font>");
+    }
+  }
+  return String();
+}
+

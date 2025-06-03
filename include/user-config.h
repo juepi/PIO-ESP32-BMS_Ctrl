@@ -18,12 +18,17 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #endif
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 
 //
 // Declare user_setup, user_loop and custom global functions
 //
 extern void user_setup();
 extern void user_loop();
+// Webserver functions
+extern String processor(const String &var);
+extern void notFound(AsyncWebServerRequest *request);
 
 //
 // Declare global user specific objects
@@ -54,6 +59,10 @@ extern DallasTemperature OWtemp;
 //
 // Controller specific
 //
+// MQTT Topic Tree prepended to all topics
+// ATTN: Must end with "/"!
+#define TOPTREE "HB7/UG/BMS/"
+
 // MQTT Topics for published data
 #define t_Ctrl_StatT TOPTREE "CtrlStatTXT" // ESP Controller status text provided through MQTT
 #define t_Ctrl_StatU TOPTREE "CtrlStatUpt" // ESP Controller uptime provided through MQTT
@@ -377,5 +386,9 @@ extern Load_SSR_Config SSR3; // Config struct for SSR3
 extern Balancer_Config SSR2; // Config struct for SSR2
 extern PV_Config PV;         // Config struct for PV related stuff
 extern Safety_Config Safety; // Config struct for safety features
+
+// webserver stuff
+extern const char *PARAM_MESSAGE;
+extern const char *index_html;
 
 #endif // USER_CONFIG_H

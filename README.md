@@ -145,6 +145,11 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Immediately publish Controller-Alarm flag via MQTT when alarm occurs (or recovers)
 - Fixed error in cell temperature alarm handling
 
+## v2.7.0
+- Added web interface (network status checking / reboot ESP)
+- Upgraded underlying [**PIO-ESP32-Template to v1.4.0**](https://github.com/juepi/PIO-ESP32-Template)
+- ESP will automatically reset after 2hrs without WiFi+MQTT (see `MAX_NETFAIL_RECONN` in `wifi-config.h`)
+
 # NOTE on missing VeDirectFrameHandler library
 
 I somehow managed to not to include the VeDirectFrameHandler library into previous commits as it was intended. **This affects all versions prior v2.1.0!**  

@@ -7,11 +7,14 @@
 
 #include <Arduino.h>
 
-// Firmware Information
-#define FIRMWARE_NAME "PIO ESP32 Daly BMS Controller"
-#define FIRMWARE_VERSION "2.6.1"
-#define TEMPLATE_VERSION "1.2.0"
+//
+// Firmware Version Information
+//
+#define FIRMWARE_NAME "ESP32-BMS-Controller"
+#define FIRMWARE_VERSION "2.7.0" // Add firmware version info of your custom code here
+#define TEMPLATE_VERSION "1.4.0"
 
+//
 // Serial Output configuration
 //
 #define BAUD_RATE 115200
@@ -23,9 +26,17 @@
 #define DEBUG_PRINTLN(...)
 #endif
 
-// ESP DeepSleep Configuration
 //
-// DeepSleep duration in Minutes
-#define DS_DURATION_MIN 2
+// Handle #define dependencies
+//
+#ifdef BOOT_WIFI_OFF
+#undef WAIT_FOR_SUBSCRIPTIONS
+#undef NET_OUTAGE // to avoid compiler warning
+#define NET_OUTAGE 1
+#endif
+#ifdef SLEEP_UNTIL
+#undef NTP_CLT // to avoid compiler warning
+#define NTP_CLT
+#endif
 
 #endif // GENERIC_CONFIG_H
