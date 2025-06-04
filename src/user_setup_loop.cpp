@@ -208,8 +208,14 @@ void user_loop()
     mqttClt.publish(t_Ctrl_Cfg_SSR3_actState, String(Bool_Decoder[0]).c_str(), true);
     // Also publish initial alarm state
     mqttClt.publish(t_Ctrl_Alarm, String(Bool_Decoder[0]).c_str(), true);
-    // Use MqttDelay to ensure that we re-read the freshly published settings from the broker
-    MqttDelay(1000);
+    // Use MqttDelay to ensure that we re-read the freshly published settings from the broker and flush SoftwareSerial data
+    // a delay of 1.2sec should give us 1 full VE.Direct frame for every Victron device after flushing serial data
+    VEDSer_Chrg1.flush();
+    VEDSer_Shnt.flush();
+#ifdef ENA_SS2
+    VEDSer_Chrg2.flush();
+#endif
+    MqttDelay(1200);
   }
 
   //
@@ -376,8 +382,8 @@ void user_loop()
           }
           else
           {
-            // Additional plausibility check for new SOC
-            if (abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC * 10) > VSS_MAX_SOC_DIFF)
+            // Additional plausibility check for new SOC (ignore for the first few seconds after firmware start)
+            if ((abs(atof(VED_Shnt.veValue[VSS.iSOC]) - VSS.SOC * 10) > VSS_MAX_SOC_DIFF) && UptimeSeconds > 5)
             {
               if ((atoi(VED_Chrg1.veValue[VCHRG1.iCS]) == 4) && (atoi(VED_Shnt.veValue[VSS.iSOC]) == 1000))
               {
@@ -388,7 +394,6 @@ void user_loop()
               else
               {
                 // Unplausible increase or decrease of SOC - discard data
-                // mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
                 mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Discard_Diff").c_str(), false);
                 VSS.ConnStat = 3;
               }
@@ -403,7 +408,6 @@ void user_loop()
         else
         {
           // Unplausible SOC decoded
-          // mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Unplausible:" + String(VED_Shnt.veValue[VSS.iSOC])).c_str(), false);
           mqttClt.publish(t_Ctrl_StatT, String("VSS_SOC_Unplausible").c_str(), false);
           VSS.ConnStat = 3;
         }
@@ -509,6 +513,8 @@ void user_loop()
       }
     }
     BMS.lastUpdate = UptimeSeconds;
+    // update MQTT client - just to be sure
+    MqttUpdater();
   }
 
   //
@@ -650,6 +656,27 @@ void user_loop()
   }
 
   //
+  // Verify validity of most important Victron readouts after ~10sec uptime (reboot ESP on failure)
+  //
+  if (UptimeSeconds > 10 && UptimeSeconds < 12)
+  {
+    // Check for valid index values for VSS
+    if (VSS.iSOC == 255 || VSS.iV == 255 || VSS.iALARM == 255)
+    {
+      mqttClt.publish(t_Ctrl_StatT, String("CRIT_BOOT_INVALID_VSS_INDX").c_str(), false);
+      delay(100);
+      ESP.restart();
+    }
+    // Check for plausible VSS data
+    if ((VSS.V < 20 || VSS.V > 30) || (VSS.SOC < 0 || VSS.SOC > 100))
+    {
+      mqttClt.publish(t_Ctrl_StatT, String("CRIT_BOOT_INVALID_VSS_DATA").c_str(), false);
+      delay(100);
+      ESP.restart();
+    }
+  }
+
+  //
   // Publish data to MQTT broker
   //
   if (((UptimeSeconds - MQTTLastDataPublish) >= DATA_UPDATE_INTERVAL || JustBooted) && mqttClt.connected())
@@ -662,7 +689,7 @@ void user_loop()
       mqttClt.publish(t_Ctrl_StatT, String("Startup Firmware v" + String(FIRMWARE_VERSION) + " WiFi RSSI: " + String(WiFi.RSSI())).c_str(), false);
     }
     mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
-    // Publish SSR states periodically (logging / plots for FHEM)
+    // Publish active SSR states periodically (logging / plots for FHEM)
     mqttClt.publish(t_Ctrl_Cfg_SSR1_actState, String(Bool_Decoder[(int)SSR1.actState]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR2_actState, String(Bool_Decoder[(int)SSR2.actState]).c_str(), true);
     mqttClt.publish(t_Ctrl_Cfg_SSR3_actState, String(Bool_Decoder[(int)SSR3.actState]).c_str(), true);
@@ -846,109 +873,113 @@ void user_loop()
   //
   // Load Controller (SSR1)
   //
-  // If SOC has reached the configured charge limit, enable load
-  if (SSR1.Auto && !SSR1.actState)
+  // Automatic SSR handling is done only when Uptime is > 15 seconds to ensure that there's valid data from important devices (mainly VSS)
+  if (UptimeSeconds > 15)
   {
-    // Auto mode enabled, SSR1 disabled, check PV power state
-    switch (PV.PwrLvl)
+    // If SOC has reached the configured charge limit, enable load
+    if (SSR1.Auto && !SSR1.actState)
     {
-    case 0: // Low power
-      if (VSS.SOC > SSR1.LPOnSOC)
+      // Auto mode enabled, SSR1 disabled, check PV power state
+      switch (PV.PwrLvl)
       {
-        SSR1.setState = true;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
-      }
-      break;
-    case 1: // high power
-      if (VSS.SOC > SSR1.HPOnSOC)
-      {
-        SSR1.setState = true;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
-      }
-    }
-  }
-
-  // Disable SSR1 when Off-SOC is reached
-  // This must also trigger if the load was enabled manually, so use effective SSR1.actState
-  if (SSR1.actState && VSS.SOC <= SSR1.OffSOC)
-  {
-    SSR1.setState = false;
-    mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_SoC:" + String(VSS.SOC, 0)).c_str(), false);
-  }
-
-  //
-  // Load Controller (SSR3)
-  //
-  // If SOC has reached the configured charge limit, enable load
-  if (SSR3.Auto && !SSR3.actState)
-  {
-    // Auto mode enabled, SSR3 disabled, check PV power state
-    switch (PV.PwrLvl)
-    {
-    case 0: // Low power
-      if (VSS.SOC > SSR3.LPOnSOC)
-      {
-        SSR3.setState = true;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
-      }
-      break;
-    case 1: // high power
-      if (VSS.SOC > SSR3.HPOnSOC)
-      {
-        SSR3.setState = true;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
-      }
-    }
-  }
-
-  // Disable SSR3 when Off-SOC is reached
-  // This must also trigger if the load was enabled manually, so use effective SSR3.actState
-  if (SSR3.actState && VSS.SOC <= SSR3.OffSOC)
-  {
-    SSR3.setState = false;
-    mqttClt.publish(t_Ctrl_StatT, String("SSR3_OFF_SoC:" + String(VSS.SOC, 0)).c_str(), false);
-  }
-
-  //
-  // Active Balancer Controller (SSR2)
-  //
-  if (SSR2.Auto)
-  {
-    if (SSR2.actState)
-    {
-      // Balancer is active
-      // ..check if ALL cells are below low cell voltage threshold
-      int CellCnt = 0;
-      for (int i = 0; i < Daly.get.numberOfCells; i++)
-      {
-        if (Daly.get.cellVmV[i] < SSR2.CVOff)
+      case 0: // Low power
+        if (VSS.SOC > SSR1.LPOnSOC)
         {
-          CellCnt++;
+          SSR1.setState = true;
+          mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
+        }
+        break;
+      case 1: // high power
+        if (VSS.SOC > SSR1.HPOnSOC)
+        {
+          SSR1.setState = true;
+          mqttClt.publish(t_Ctrl_StatT, String("SSR1_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
         }
       }
-      if (CellCnt == Daly.get.numberOfCells)
+    }
+
+    // Disable SSR1 when Off-SOC is reached
+    // This must also trigger if the load was enabled manually, so use effective SSR1.actState
+    if (SSR1.actState && VSS.SOC <= SSR1.OffSOC)
+    {
+      SSR1.setState = false;
+      mqttClt.publish(t_Ctrl_StatT, String("SSR1_OFF_SoC:" + String(VSS.SOC, 0)).c_str(), false);
+    }
+
+    //
+    // Load Controller (SSR3)
+    //
+    // If SOC has reached the configured charge limit, enable load
+    if (SSR3.Auto && !SSR3.actState)
+    {
+      // Auto mode enabled, SSR3 disabled, check PV power state
+      switch (PV.PwrLvl)
       {
-        // Low cell voltage threshold reached for all cells, disable Balancer
-        SSR2.setState = false;
-        mqttClt.publish(t_Ctrl_StatT, String("SSR2_OFF_CVlow").c_str(), false);
+      case 0: // Low power
+        if (VSS.SOC > SSR3.LPOnSOC)
+        {
+          SSR3.setState = true;
+          mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_LoPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
+        }
+        break;
+      case 1: // high power
+        if (VSS.SOC > SSR3.HPOnSOC)
+        {
+          SSR3.setState = true;
+          mqttClt.publish(t_Ctrl_StatT, String("SSR3_ON_HiPV_SoC:" + String(VSS.SOC, 0)).c_str(), false);
+        }
       }
     }
-    else
+
+    // Disable SSR3 when Off-SOC is reached
+    // This must also trigger if the load was enabled manually, so use effective SSR3.actState
+    if (SSR3.actState && VSS.SOC <= SSR3.OffSOC)
     {
-      // Balancer is inactive
-      // If voltage difference is too high
-      if (Daly.get.cellDiff > SSR2.CdiffOn)
+      SSR3.setState = false;
+      mqttClt.publish(t_Ctrl_StatT, String("SSR3_OFF_SoC:" + String(VSS.SOC, 0)).c_str(), false);
+    }
+
+    //
+    // Active Balancer Controller (SSR2)
+    //
+    if (SSR2.Auto)
+    {
+      if (SSR2.actState)
       {
-        // ..check if any cell is above enable voltage
+        // Balancer is active
+        // ..check if ALL cells are below low cell voltage threshold
+        int CellCnt = 0;
         for (int i = 0; i < Daly.get.numberOfCells; i++)
         {
-          if (Daly.get.cellVmV[i] > SSR2.CVOn)
+          if (Daly.get.cellVmV[i] < SSR2.CVOff)
           {
-            // High cell voltage threshold reached, enable Balancer
-            SSR2.setState = true;
-            mqttClt.publish(t_Ctrl_StatT, String("SSR2_ON_C" + String((i + 1)) + "_Vhi").c_str(), false);
-            // end loop, one cell above threshold is enough
-            break;
+            CellCnt++;
+          }
+        }
+        if (CellCnt == Daly.get.numberOfCells)
+        {
+          // Low cell voltage threshold reached for all cells, disable Balancer
+          SSR2.setState = false;
+          mqttClt.publish(t_Ctrl_StatT, String("SSR2_OFF_CVlow").c_str(), false);
+        }
+      }
+      else
+      {
+        // Balancer is inactive
+        // If voltage difference is too high
+        if (Daly.get.cellDiff > SSR2.CdiffOn)
+        {
+          // ..check if any cell is above enable voltage
+          for (int i = 0; i < Daly.get.numberOfCells; i++)
+          {
+            if (Daly.get.cellVmV[i] > SSR2.CVOn)
+            {
+              // High cell voltage threshold reached, enable Balancer
+              SSR2.setState = true;
+              mqttClt.publish(t_Ctrl_StatT, String("SSR2_ON_C" + String((i + 1)) + "_Vhi").c_str(), false);
+              // end loop, one cell above threshold is enough
+              break;
+            }
           }
         }
       }
@@ -1000,7 +1031,8 @@ void user_loop()
   }
 
   // Disable loads and auto-modes when battery pack voltage is below critical threshold
-  if (!Safety.LowBatVCritical && VSS.V <= Safety.Crit_Bat_Low_V)
+  // 0V is the initial state for VSS.V, which may be encountered at firmware boot - ignore, as this would mean that the ESP does not have power
+  if (!Safety.LowBatVCritical && (VSS.V <= Safety.Crit_Bat_Low_V && VSS.V != 0))
   {
     Safety.LowBatVCritical = true;
     SSR1.setState = false;

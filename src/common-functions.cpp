@@ -154,7 +154,7 @@ void MqttUpdater()
         {
             DEBUG_PRINTLN("Unable to connect to MQTT broker.");
 #ifdef ONBOARD_LED
-            ToggleLed(LED, 100, 40);
+            ToggleLed(LED, 100, 4);
 #endif
             if (NetFailAction == 0)
             {
