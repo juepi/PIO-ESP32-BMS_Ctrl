@@ -150,6 +150,7 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Upgraded underlying [**PIO-ESP32-Template to v1.4.0**](https://github.com/juepi/PIO-ESP32-Template)
 - Checking validity of most important Victron SmartShunt data 10sec after firmare startup (ESP will reboot if no valid SOC or voltage is available)
 - Automatic SSR-handling is started 15sec after ESP boot if enabled (hopefully solves fast-toggling SSR issue)
+- Publishing of data to MQTT will start after `DATA_UPDATE_INTERVAL` to avoid publishing wrong/incomplete data directly at firmware boot
 
 # NOTE on missing VeDirectFrameHandler library
 

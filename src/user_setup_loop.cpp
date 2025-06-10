@@ -186,6 +186,10 @@ void user_loop()
   static VED_Charger_data VCHRG1;
 #ifdef ENA_SS2
   static VED_Charger_data VCHRG2;
+  if (JustBooted)
+  {
+    VCHRG2.iH20 = 255; // Initialize to invalid value, will be updated to valid value by the getIndexByName function at data readouts
+  }
 #endif
   // VE.Direct SmartShunt
   static char VED_Data_Labels[10][6] = {"PID", "V", "I", "P", "CE", "SOC", "TTG", "ALARM", "AR", "H20"};
@@ -265,7 +269,7 @@ void user_loop()
       // assume connection OK
       VCHRG2.ConnStat = 1;
       // Charger #2 does not obey same data order as charger #1, "H20" seems to have a different index
-      if (JustBooted)
+      if (VCHRG2.iH20 == 255)
       {
         // Get correct index by name
         VCHRG2.iH20 = VED_Chrg2.getIndexByName(VED_Data_Labels[i_CHRG_LBL_H20_CH2]);
@@ -658,7 +662,7 @@ void user_loop()
   //
   // Verify validity of most important Victron readouts after ~10sec uptime (reboot ESP on failure)
   //
-  if (UptimeSeconds > 10 && UptimeSeconds < 12)
+  if (UptimeSeconds >= 10 && UptimeSeconds <= 11)
   {
     // Check for valid index values for VSS
     if (VSS.iSOC == 255 || VSS.iV == 255 || VSS.iALARM == 255)
@@ -674,20 +678,31 @@ void user_loop()
       delay(100);
       ESP.restart();
     }
+#ifdef ENA_SS2
+    // Check for valid index values for VCHRG2
+    if (VCHRG2.iH20 == 255)
+    {
+      mqttClt.publish(t_Ctrl_StatT, String("CRIT_BOOT_INVALID_VCHRG2_INDX").c_str(), false);
+      delay(100);
+      ESP.restart();
+    }
+#endif
   }
 
   //
   // Publish data to MQTT broker
   //
-  if (((UptimeSeconds - MQTTLastDataPublish) >= DATA_UPDATE_INTERVAL || JustBooted) && mqttClt.connected())
+  if (JustBooted)
+  {
+    mqttClt.publish(t_Ctrl_StatT, String("Startup Firmware v" + String(FIRMWARE_VERSION) + " WiFi RSSI: " + String(WiFi.RSSI())).c_str(), false);
+  }
+
+  // Start periodic publishing after DATA_UPDATE_INTERVAL seconds uptime (to avoid publishing incomplete data directly after boot)
+  if ((UptimeSeconds - MQTTLastDataPublish) >= DATA_UPDATE_INTERVAL && mqttClt.connected())
   {
     MQTTLastDataPublish = UptimeSeconds;
 
     // Controller
-    if (JustBooted)
-    {
-      mqttClt.publish(t_Ctrl_StatT, String("Startup Firmware v" + String(FIRMWARE_VERSION) + " WiFi RSSI: " + String(WiFi.RSSI())).c_str(), false);
-    }
     mqttClt.publish(t_Ctrl_StatU, String(UptimeSeconds).c_str(), true);
     // Publish active SSR states periodically (logging / plots for FHEM)
     mqttClt.publish(t_Ctrl_Cfg_SSR1_actState, String(Bool_Decoder[(int)SSR1.actState]).c_str(), true);
