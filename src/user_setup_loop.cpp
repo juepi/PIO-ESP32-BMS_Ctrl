@@ -15,9 +15,13 @@ SoftwareSerial VEDSer_Chrg1;
 VeDirectFrameHandler VED_Chrg1;
 SoftwareSerial VEDSer_Shnt;
 VeDirectFrameHandler VED_Shnt;
+MovingAverage VCHRG1_PPV_1mMA(60); // 1 minute moving average for PV power (readouts every second)
+MovingAverage VCHRG1_PPV_1hMA(60); // 1 hour moving average for PV power (Avg_PPV; updated every minute)
 #ifdef ENA_SS2
 SoftwareSerial VEDSer_Chrg2;
 VeDirectFrameHandler VED_Chrg2;
+MovingAverage VCHRG2_PPV_1mMA(60); // 1 minute moving average for PV power
+MovingAverage VCHRG2_PPV_1hMA(60); // 1 hour moving average for PV power (Avg_PPV)
 #endif
 
 // Setup OneWire Temperature Sensor(s)
@@ -239,8 +243,9 @@ void user_loop()
       VCHRG1.lastDecodedFr = VED_Chrg1.frameCounter;
       // assume connection OK
       VCHRG1.ConnStat = 1;
-      // Store new data in struct (only PPV needed here, everything else will just be copied out to MQTT topics)
-      VCHRG1.PPV = atoi(VED_Chrg1.veValue[VCHRG1.iPPV]);
+      // Calculate moving averages for PPV and store in struct (only PPV needed here, everything else will just be copied out to MQTT topics)
+      VCHRG1_PPV_1mMA.addValue(atof(VED_Chrg1.veValue[VCHRG1.iPPV]));
+      VCHRG1.PPV = int(VCHRG1_PPV_1mMA.getAverage() + 0.5f); // round to nearest integer
     }
     // grant time for background tasks
     delay(1);
@@ -274,9 +279,9 @@ void user_loop()
         // Get correct index by name
         VCHRG2.iH20 = VED_Chrg2.getIndexByName(VED_Data_Labels[i_CHRG_LBL_H20_CH2]);
       }
-
-      // Store new data in struct (only PPV needed here, everything else will just be copied out to MQTT topics)
-      VCHRG2.PPV = atoi(VED_Chrg2.veValue[VCHRG2.iPPV]);
+      // Calculate moving averages for PPV and store in struct (only PPV needed here, everything else will just be copied out to MQTT topics)
+      VCHRG2_PPV_1mMA.addValue(atof(VED_Chrg2.veValue[VCHRG2.iPPV]));
+      VCHRG2.PPV = int(VCHRG2_PPV_1mMA.getAverage() + 0.5f); // round to nearest integer
     }
     // grant time for background tasks
     delay(1);
@@ -566,8 +571,12 @@ void user_loop()
         }
         else
         {
-          // Readout valid, update temperature array
-          OW.Temperature[i] = ReadT;
+          // Plausibility check for readout
+          if ((abs(ReadT - OW.Temperature[i]) < OW_MAX_TEMP_DIFF) || JustBooted)
+          {
+            // readout seems plausible, update temperature array
+            OW.Temperature[i] = ReadT;
+          }
         }
       }
       if (OW.ReadOk)
@@ -594,69 +603,28 @@ void user_loop()
 #endif // ENA_ONEWIRE
 
   //
-  // Update 1hr power average every 6 minutes
+  // Update 1hr average PPV and power level (sum of all chargers)
   //
-  if ((UptimeSeconds - LastAvgCalc) >= 360 || JustBooted)
+  if ((UptimeSeconds - LastAvgCalc) >= 60 || JustBooted)
   {
-    // Fill array with current power value if we've just booted
-    if (JustBooted)
-    {
-      for (int i = 0; i < 10; i++)
-      {
-        VCHRG1.Avg_PPV_Arr[i] = VCHRG1.PPV;
-      }
-    }
-    // Update array element with current PV power
-    VCHRG1.Avg_PPV_Arr[UpdAvgArrIndx] = VCHRG1.PPV;
-    if (UpdAvgArrIndx > 9)
-    {
-      UpdAvgArrIndx = 0;
-    }
-    // Recalculate 1hr power average
-    float Pavg_Sum = 0;
-    for (int i = 0; i < 10; i++)
-    {
-      Pavg_Sum += VCHRG1.Avg_PPV_Arr[i];
-    }
-    VCHRG1.Avg_PPV = Pavg_Sum / 10;
+    // Update 1hr PPV average every minute
+    VCHRG1_PPV_1hMA.addValue(VCHRG1.PPV);
+    VCHRG1.Avg_PPV = VCHRG1_PPV_1hMA.getAverage();
     PV.AvgPPVSum = VCHRG1.Avg_PPV;
 #ifdef ENA_SS2
-    // Fill array with current power value if we've just booted
-    if (JustBooted)
-    {
-      for (int i = 0; i < 10; i++)
-      {
-        VCHRG2.Avg_PPV_Arr[i] = VCHRG2.PPV;
-      }
-    }
-    // Update array element with current PV power
-    VCHRG2.Avg_PPV_Arr[UpdAvgArrIndx] = VCHRG2.PPV;
-    // Recalculate 1hr power average
-    Pavg_Sum = 0;
-    for (int i = 0; i < 10; i++)
-    {
-      Pavg_Sum += VCHRG2.Avg_PPV_Arr[i];
-    }
-    VCHRG2.Avg_PPV = Pavg_Sum / 10;
-    PV.AvgPPVSum = VCHRG1.Avg_PPV + VCHRG2.Avg_PPV;
+    VCHRG2_PPV_1hMA.addValue(VCHRG2.PPV);
+    VCHRG2.Avg_PPV = VCHRG2_PPV_1hMA.getAverage();
+    PV.AvgPPVSum += VCHRG2.Avg_PPV;
 #endif
-
-    // Update PPV power level (sum of all chargers)
-    if (PV.AvgPPVSum >= PV.HighPPV)
-    {
-      PV.PwrLvl = 1; // High avg PV power
-    }
-    else
-    {
-      PV.PwrLvl = 0; // Low avg PV power
-    }
-    // rotate to next array element
-    UpdAvgArrIndx++;
-    if (UpdAvgArrIndx > 9)
-    {
-      UpdAvgArrIndx = 0;
-    }
     LastAvgCalc = UptimeSeconds;
+  }
+  if (PV.AvgPPVSum >= PV.HighPPV)
+  {
+    PV.PwrLvl = 1; // High avg PV power
+  }
+  else
+  {
+    PV.PwrLvl = 0; // Low avg PV power
   }
 
   //
@@ -680,6 +648,7 @@ void user_loop()
     }
 #ifdef ENA_SS2
     // Check for valid index values for VCHRG2
+    // Note: VCHRG1 has never been an issue
     if (VCHRG2.iH20 == 255)
     {
       mqttClt.publish(t_Ctrl_StatT, String("CRIT_BOOT_INVALID_VCHRG2_INDX").c_str(), false);

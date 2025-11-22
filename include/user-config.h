@@ -92,15 +92,16 @@ extern DallasTemperature OWtemp;
 //
 // OneWire Bus
 //
-#ifdef ENA_ONEWIRE           // Optional OneWire support
-#define PIN_OWDATA 4         // GPIO for OneWire communication (Note: high GPIOs >36 do not work!)
-#define OWRES 9              // Use 9 bits resolution (0.5°C)
-#define NUM_OWTEMP 3         // Amount of connected DS18B20 sensors
-#define OW_UPDATE_INTERVAL 5 // sensor readout interval in seconds
-#define OW_TIMEOUT 60        // If no data update for all sensors occur within this timespan (seconds), connection to OneWire considered dead
-#define i_C1_SENS 2          // DS18B20 sensor index for Cell 1 temperature (Hint: use a OneWire-temperature demo sketch to determine index values of your sensors!)
-#define i_C8_SENS 0          // DS18B20 sensor index for Cell 8 temperature
-#define i_CHRG_SENS 1        // DS18B20 sensor index for SmartSolar Charger
+#ifdef ENA_ONEWIRE             // Optional OneWire support
+#define PIN_OWDATA 4           // GPIO for OneWire communication (Note: high GPIOs >36 do not work!)
+#define OWRES 9                // Use 9 bits resolution (0.5°C)
+#define NUM_OWTEMP 3           // Amount of connected DS18B20 sensors
+#define OW_UPDATE_INTERVAL 5   // sensor readout interval in seconds
+#define OW_TIMEOUT 60          // If no data update for all sensors occur within this timespan (seconds), connection to OneWire considered dead
+#define i_C1_SENS 2            // DS18B20 sensor index for Cell 1 temperature (Hint: use a OneWire-temperature demo sketch to determine index values of your sensors!)
+#define i_C8_SENS 0            // DS18B20 sensor index for Cell 8 temperature
+#define i_CHRG_SENS 1          // DS18B20 sensor index for SmartSolar Charger
+#define OW_MAX_TEMP_DIFF 30.0f // Max allowed temperature difference between subsequent readouts of a sensor (to detect faulty readings)
 
 // MQTT Topics for published data
 #define t_OW_TEMP_Templ TOPTREE "OW_T" // will be extended with sensor numbers starting at 1
@@ -291,7 +292,6 @@ struct VED_Charger_data
 {
     int PPV = 0;
     float Avg_PPV = 0; // 1h average PV power
-    int Avg_PPV_Arr[10] = {0};
     int iVB = i_CHRG_LBL_VB; // All i* vars point to the index of the corresponding values in VEdirectFrameHandler .veValue array
     int iIB = i_CHRG_LBL_IB; // for the charger, the data order is always the same, so static values can be used here from defines above
     int iPPV = i_CHRG_LBL_PPV;

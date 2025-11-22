@@ -47,7 +47,7 @@ bool MqttConnectToBroker()
                     }
                     if (!MqttSubscriptions[i].Subscribed)
                     {
-                        if (mqttClt.subscribe(MqttSubscriptions[i].Topic,SUB_QOS))
+                        if (mqttClt.subscribe(MqttSubscriptions[i].Topic, SUB_QOS))
                         {
                             MqttSubscriptions[i].Subscribed = true;
                             SubscribedTopics++;
@@ -92,7 +92,7 @@ void MqttUpdater()
             // New connection to broker, fetch topics
             // have retained messages and no one posts a message (disable in platformio.ini)
             NetState = NET_UP;
-            #ifdef WAIT_FOR_SUBSCRIPTIONS
+#ifdef WAIT_FOR_SUBSCRIPTIONS
             // ATTN: only try for MAX_TOP_RCV_ATTEMPTS then end according to NETFAILACTION
             DEBUG_PRINT("Waiting for messages from subscribed topics..");
             int TopicRcvAttempts = 0;
@@ -399,3 +399,73 @@ void NTP_Synced_Callback(struct timeval *t)
     NTPSyncCounter++;
 }
 #endif // NTP_CLT
+
+/**
+ * C++ Classes
+ * =======================================================================
+ */
+
+/**
+ * Moving Average Class
+ * Constructor: Initializes the class and reserves memory.
+ * @param capacity The maximum number of values (window size).
+ */
+MovingAverage::MovingAverage(size_t capacity)
+    : capacity_(capacity), count_(0), next_index_(0), sum_(0.0f) // Using 0.0f for float literal
+{
+    // Reserves space for the values in the vector.
+    if (capacity_ > 0)
+    {
+        // Resizes the vector to the capacity and initializes elements to 0.0f.
+        values_.resize(capacity_, 0.0f);
+    }
+}
+
+/**
+ * Adds a new measurement value and updates the average.
+ * Uses circular buffer logic and the running sum.
+ * @param new_value The new measurement value.
+ */
+void MovingAverage::addValue(float new_value)
+{
+    if (capacity_ == 0)
+    {
+        return;
+    }
+
+    // 1. Remove the oldest value from the sum if capacity has been reached
+    if (count_ == capacity_)
+    {
+        // Remove the value that is about to be overwritten
+        sum_ -= values_[next_index_];
+    }
+    else
+    {
+        // Capacity not reached yet, increment count
+        count_++;
+    }
+
+    // 2. Store the new value in the vector (overwrites the old value if buffer is full)
+    values_[next_index_] = new_value;
+
+    // 3. Add the new value to the sum
+    sum_ += new_value;
+
+    // 4. Update the index for the next value (circular buffer logic)
+    next_index_ = (next_index_ + 1) % capacity_;
+}
+
+/**
+ * Calculates and returns the current moving average.
+ * @return The calculated average (float).
+ */
+float MovingAverage::getAverage() const
+{
+    if (count_ == 0)
+    {
+        return 0.0f;
+    }
+    // Uses the stored sum for O(1) access time.
+    // Explicitly cast count_ to float for accurate division
+    return sum_ / (float)count_;
+}

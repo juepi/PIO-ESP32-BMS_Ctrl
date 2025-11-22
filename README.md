@@ -152,6 +152,12 @@ Thanks to [cterwilliger](https://github.com/cterwilliger/VeDirectFrameHandler/tr
 - Automatic SSR-handling is started 15sec after ESP boot if enabled (hopefully solves fast-toggling SSR issue)
 - Publishing of data to MQTT will start after `DATA_UPDATE_INTERVAL` to avoid publishing wrong/incomplete data directly at firmware boot
 
+## v2.7.1
+- Added Moving Average class to calculate short (1 min) and long (1hr) averages for Victron chargers PPV values
+- Added validation of OneWire temperature readouts (reject reading if diff between subsequent readouts is higher than `OW_MAX_TEMP_DIFF`)
+- Updated DallasTemperature library to [version 4.0.5](https://registry.platformio.org/libraries/milesburton/DallasTemperature)
+
+
 # NOTE on missing VeDirectFrameHandler library
 
 I somehow managed to not to include the VeDirectFrameHandler library into previous commits as it was intended. **This affects all versions prior v2.1.0!**  

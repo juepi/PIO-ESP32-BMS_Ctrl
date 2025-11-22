@@ -11,7 +11,7 @@
 // Firmware Version Information
 //
 #define FIRMWARE_NAME "ESP32-BMS-Controller"
-#define FIRMWARE_VERSION "2.7.0" // Add firmware version info of your custom code here
+#define FIRMWARE_VERSION "2.7.1" // Add firmware version info of your custom code here
 #define TEMPLATE_VERSION "1.4.0"
 
 //
